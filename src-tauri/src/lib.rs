@@ -116,8 +116,16 @@ fn start_pet_conversation(
     message: String,
     pet_name: String,
     pet_instructions: String,
+    purpose: Option<String>,
 ) -> Result<String, String> {
-    agent_runtime::start(app, &state, message, pet_name, pet_instructions)
+    agent_runtime::start(
+        app,
+        &state,
+        message,
+        pet_name,
+        pet_instructions,
+        purpose.unwrap_or_else(|| "conversation".into()),
+    )
 }
 
 #[tauri::command]

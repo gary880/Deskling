@@ -20,6 +20,8 @@ export const DESKTOP_EVENTS = {
   toggleDesktopFloorFallback: "deskling-toggle-desktop-floor-fallback",
   accessibilityStatusChanged: "deskling-accessibility-status-changed",
   autonomySettings: "deskling-autonomy-settings",
+  proactiveSettings: "deskling-proactive-settings",
+  testProactive: "deskling-test-proactive",
   petCatalogChanged: "deskling-pet-catalog-changed",
   agentActivity: "deskling-agent-activity",
   conversation: "deskling-conversation-event",
@@ -38,6 +40,7 @@ export const DESKTOP_STORAGE = {
   allowRoaming: "deskling.allowRoaming",
   sleepAfterMinutes: "deskling.sleepAfterMinutes",
   wakeOnWindowChange: "deskling.wakeOnWindowChange",
+  proactiveSettings: "deskling.proactiveSettings",
 } as const;
 
 export function isDesktopRuntime(): boolean {
@@ -91,9 +94,9 @@ export async function agentRuntimeAvailable(): Promise<boolean> {
   return invoke<boolean>("agent_runtime_available");
 }
 
-export async function startPetConversation(message: string, petName: string, petInstructions = ""): Promise<string> {
+export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation"): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_pet_conversation", { message, petName, petInstructions });
+  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose });
 }
 
 export async function loadPetPersonality(petId: string): Promise<PetPersonalityOverride> {

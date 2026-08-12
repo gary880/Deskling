@@ -45,6 +45,7 @@ import {
 import { usePetCatalog } from "./hooks/usePetCatalog";
 import { MotionEngine } from "./motion/MotionEngine";
 import { SpriteRenderer } from "./renderers/SpriteRenderer";
+import { DEFAULT_PROACTIVE_SETTINGS, type ProactiveInteractionSettings } from "./behavior/ProactiveInteractionScheduler";
 
 const BEHAVIORS = ["idle", "walk", "sleep", "thinking", "talking", "happy"] as const;
 const BEHAVIOR_LABELS: Record<(typeof BEHAVIORS)[number], string> = {
@@ -117,6 +118,10 @@ export function App() {
       DEFAULT_AUTONOMY_SETTINGS.wakeOnWindowChange,
     ),
   );
+  const [proactiveSettings, setProactiveSettings] = useState<ProactiveInteractionSettings>(() => {
+    try { return { ...DEFAULT_PROACTIVE_SETTINGS, ...JSON.parse(localStorage.getItem(DESKTOP_STORAGE.proactiveSettings) ?? "{}") }; }
+    catch { return DEFAULT_PROACTIVE_SETTINGS; }
+  });
   const stageRef = useRef<HTMLDivElement>(null);
   const dragPointerRef = useRef<number | null>(null);
   const motionRef = useRef(new MotionEngine({ x: 420, y: 0 }));
@@ -387,6 +392,13 @@ export function App() {
     emitAutonomySettings({ wakeOnWindowChange: enabled });
   };
 
+  const updateProactiveSettings = (updates: Partial<ProactiveInteractionSettings>) => {
+    const next = { ...proactiveSettings, ...updates };
+    setProactiveSettings(next);
+    localStorage.setItem(DESKTOP_STORAGE.proactiveSettings, JSON.stringify(next));
+    void emitToPet(DESKTOP_EVENTS.proactiveSettings, next);
+  };
+
   const handleAccessibilityAction = async () => {
     const status = await requestAccessibilityPermission();
     setPermissionStatus(status);
@@ -608,6 +620,16 @@ export function App() {
                 />
                 <i aria-hidden="true" />
               </label>
+              <div className="proactive-settings">
+                <p className="eyebrow">PROACTIVE CONVERSATIONS</p>
+                <label className="debug-toggle"><span><strong>主動打招呼</strong><small>明確選擇加入，無額外 context</small></span><input type="checkbox" checked={proactiveSettings.enabled} disabled={!isDesktopRuntime()} onChange={(e) => updateProactiveSettings({ enabled: e.target.checked })} /><i aria-hidden="true" /></label>
+                <label className="debug-toggle"><span><strong>使用 AI 產生短句</strong><small>不會主動執行工具</small></span><input type="checkbox" checked={proactiveSettings.useAi} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ useAi: e.target.checked })} /><i aria-hidden="true" /></label>
+                <label className="select-setting"><span><strong>頻率</strong><small>至少間隔 30 分鐘</small></span><select value={proactiveSettings.frequency} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ frequency: e.target.value as ProactiveInteractionSettings["frequency"] })}><option value="rare">少</option><option value="sometimes">有時</option><option value="often">常</option></select></label>
+                <div className="quiet-hours"><label>勿擾開始<input type="time" value={proactiveSettings.quietHoursStart} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ quietHoursStart: e.target.value })} /></label><label>勿擾結束<input type="time" value={proactiveSettings.quietHoursEnd} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ quietHoursEnd: e.target.value })} /></label></div>
+                <label className="personality-field"><span>每日上限</span><input type="number" min="1" max="10" value={proactiveSettings.dailyLimit} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ dailyLimit: Math.max(1, Math.min(10, Number(e.target.value))) })} /></label>
+                <small className="privacy-note">AI context：Pet 名稱、人格、約略時段、閒置時間、目前 behavior，以及最近 Pet 對話是否完成。永不讀取視窗標題、剪貼簿、文件或 workspace。</small>
+                <button className="proactive-test-button" type="button" disabled={!isDesktopRuntime() || !proactiveSettings.enabled || !proactiveSettings.useAi} onClick={() => void emitToPet(DESKTOP_EVENTS.testProactive, null)}>Test now</button>
+              </div>
               <label className="debug-toggle">
                 <span>
                   <strong>允許散步</strong>

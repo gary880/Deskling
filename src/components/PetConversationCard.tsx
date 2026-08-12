@@ -9,10 +9,11 @@ interface PetConversationCardProps {
   onClose: () => void;
   onSend: (message: string) => Promise<void>;
   onStop: () => Promise<void>;
+  onTypingChange?: (typing: boolean) => void;
 }
 
 export function PetConversationCard({
-  petName, response, status, runtimeAvailable, onClose, onSend, onStop,
+  petName, response, status, runtimeAvailable, onClose, onSend, onStop, onTypingChange,
 }: PetConversationCardProps) {
   const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -55,7 +56,7 @@ export function PetConversationCard({
           maxLength={8000}
           disabled={busy || !runtimeAvailable}
           placeholder="直接問 Pet…"
-          onChange={(event) => setMessage(event.target.value)}
+          onChange={(event) => { setMessage(event.target.value); onTypingChange?.(Boolean(event.target.value)); }}
           onKeyDown={onKeyDown}
         />
         {busy

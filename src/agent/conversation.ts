@@ -2,6 +2,7 @@ export type ConversationEventType = "started" | "text" | "completed" | "error";
 
 export interface ConversationEvent {
   requestId: string;
+  purpose?: "conversation" | "proactive";
   type: ConversationEventType;
   text?: string;
 }

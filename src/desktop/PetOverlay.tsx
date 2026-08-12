@@ -28,6 +28,17 @@ import { PetConversationCard } from "../components/PetConversationCard";
 import { statusFromEvent, type ConversationEvent, type ConversationStatus } from "../agent/conversation";
 import type { Facing, HitRegion, PetPersonalityOverride, Point } from "../domain/avatar";
 import { composePetInstructions, effectivePersonality } from "../domain/personality";
+import {
+  DEFAULT_PROACTIVE_SETTINGS,
+  canStartProactiveInteraction,
+  emptyProactiveHistory,
+  formatProactiveUtterance,
+  recordProactiveAttempt,
+  recordProactiveIgnored,
+  recordProactiveOpened,
+  type ProactiveHistory,
+  type ProactiveInteractionSettings,
+} from "../behavior/ProactiveInteractionScheduler";
 import { usePetCatalog } from "../hooks/usePetCatalog";
 import { SpriteRenderer } from "../renderers/SpriteRenderer";
 import {
@@ -117,6 +128,12 @@ export function PetOverlay() {
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
   const [personalityOverrides, setPersonalityOverrides] = useState<PetPersonalityOverride>({});
+  const [proactiveSettings, setProactiveSettings] = useState<ProactiveInteractionSettings>(() => {
+    try { return { ...DEFAULT_PROACTIVE_SETTINGS, ...JSON.parse(localStorage.getItem(DESKTOP_STORAGE.proactiveSettings) ?? "{}") }; }
+    catch { return DEFAULT_PROACTIVE_SETTINGS; }
+  });
+  const [userTyping, setUserTyping] = useState(false);
+  const [proactiveMessage, setProactiveMessage] = useState<string | null>(null);
   const [autonomySettings, setAutonomySettings] = useState<AutonomySettings>(() => ({
     enabled: readBooleanSetting(
       DESKTOP_STORAGE.autonomousBehavior,
@@ -150,6 +167,12 @@ export function PetOverlay() {
   const lastWindowSnapshotRef = useRef<DesktopWindowSnapshot | null>(null);
   const lastWindowFeetXRef = useRef<number | null>(null);
   const startDesktopWalkRef = useRef<() => Promise<void>>(async () => undefined);
+  const lastInteractionAtRef = useRef(Date.now());
+  const lastConversationResultRef = useRef<"completed" | "none">("none");
+  const proactiveHistoryRef = useRef<ProactiveHistory>(emptyProactiveHistory());
+  const proactiveIgnoreTimerRef = useRef<number | null>(null);
+  const proactiveActiveRef = useRef(false);
+  const testProactiveRef = useRef<() => void>(() => undefined);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -324,7 +347,7 @@ export function PetOverlay() {
   useEffect(() => {
     const scheduler = new AutonomousBehaviorScheduler(autonomySettings, {
       onIdleVariation: () => {
-        if (behaviorEngineRef.current.state !== "idle" || agentActivityEngineRef.current.event) return;
+        if (behaviorEngineRef.current.state !== "idle" || agentActivityEngineRef.current.event || proactiveActiveRef.current) return;
         setAnimation("thinking");
         if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
         idleVariationTimerRef.current = window.setTimeout(() => {
@@ -333,10 +356,10 @@ export function PetOverlay() {
         }, 4_000);
       },
       onRoamRequested: () => {
-        if (!agentActivityEngineRef.current.event) void startDesktopWalkRef.current();
+        if (!agentActivityEngineRef.current.event && !proactiveActiveRef.current) void startDesktopWalkRef.current();
       },
       onSleepRequested: () => {
-        if (agentActivityEngineRef.current.event) return;
+        if (agentActivityEngineRef.current.event || proactiveActiveRef.current) return;
         stopDesktopMotion();
         dispatchBehavior("sleepRequested");
       },
@@ -420,6 +443,11 @@ export function PetOverlay() {
         setPermissionStatus,
       ),
       listenDesktop<AutonomySettings>(DESKTOP_EVENTS.autonomySettings, setAutonomySettings),
+      listenDesktop<ProactiveInteractionSettings>(DESKTOP_EVENTS.proactiveSettings, (settings) => {
+        localStorage.setItem(DESKTOP_STORAGE.proactiveSettings, JSON.stringify(settings));
+        setProactiveSettings(settings);
+      }),
+      listenDesktop<null>(DESKTOP_EVENTS.testProactive, () => testProactiveRef.current()),
       listenDesktop<AgentActivityEvent>(DESKTOP_EVENTS.agentActivity, (event) => {
         if (!agentActivityEngineRef.current.accept(event)) return;
         if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
@@ -442,6 +470,26 @@ export function PetOverlay() {
         }
       }),
       listenDesktop<ConversationEvent>(DESKTOP_EVENTS.conversation, (event) => {
+        if (event.purpose === "proactive") {
+          if (event.type === "started") { proactiveActiveRef.current = true; setAnimation("thinking"); }
+          if (event.type === "text" && event.text) {
+            const sentence = formatProactiveUtterance(event.text);
+            setProactiveMessage(sentence);
+            showSpeech(sentence, 15_000);
+            setAnimation("talking");
+            if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
+            proactiveIgnoreTimerRef.current = window.setTimeout(() => {
+              proactiveHistoryRef.current = recordProactiveIgnored(proactiveHistoryRef.current);
+              localStorage.setItem(`deskling.proactiveHistory.${selectedPackage?.manifest.id}`, JSON.stringify(proactiveHistoryRef.current));
+              setProactiveMessage(null);
+              proactiveActiveRef.current = false;
+              setAnimation("idle");
+            }, 15_000);
+          }
+          if (event.type === "error") proactiveActiveRef.current = false;
+          if (event.type === "error") setAnimation("idle");
+          return;
+        }
         const status = statusFromEvent(event);
         setConversationStatus(status);
         if (event.type === "started") {
@@ -458,6 +506,7 @@ export function PetOverlay() {
           agentActivityEngineRef.current.accept(activity);
           setAgentEvent(activity);
         } else {
+          if (event.type === "completed") lastConversationResultRef.current = "completed";
           if (event.type === "error") setConversationResponse(event.text ?? "Pet 暫時無法回答。");
           const activity: AgentActivityEvent = { source: "codex", activity: event.type === "error" ? "error" : "success", timestamp: Date.now() };
           agentActivityEngineRef.current.accept(activity);
@@ -477,6 +526,48 @@ export function PetOverlay() {
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
   }, [dispatchBehavior, selectedPackage?.manifest.id, showSpeech, startReaction, stopDesktopMotion]);
+
+  useEffect(() => {
+    if (!selectedPackage) return;
+    const key = `deskling.proactiveHistory.${selectedPackage.manifest.id}`;
+    try { proactiveHistoryRef.current = { ...emptyProactiveHistory(), ...JSON.parse(localStorage.getItem(key) ?? "{}") }; }
+    catch { proactiveHistoryRef.current = emptyProactiveHistory(); }
+    const check = (force = false) => {
+      const snapshot = behaviorEngineRef.current.snapshot;
+      const now = new Date();
+      const runtimeContext = {
+        conversationOpen,
+        activeRequest: proactiveActiveRef.current || Boolean(agentActivityEngineRef.current.event) || conversationStatus === "thinking" || conversationStatus === "talking",
+        dragging: snapshot.dragging,
+        sleeping: snapshot.sleeping,
+        userTyping,
+        petVisible: document.visibilityState === "visible",
+        idleMinutes: (now.getTime() - lastInteractionAtRef.current) / 60_000,
+      };
+      const operationallySafe = !runtimeContext.conversationOpen && !runtimeContext.activeRequest && !runtimeContext.dragging
+        && !runtimeContext.sleeping && !runtimeContext.userTyping && runtimeContext.petVisible;
+      if (force ? !operationallySafe : !canStartProactiveInteraction(proactiveSettings, runtimeContext, proactiveHistoryRef.current, now)) return;
+      if (!force) {
+        proactiveHistoryRef.current = recordProactiveAttempt(proactiveHistoryRef.current, now);
+        localStorage.setItem(key, JSON.stringify(proactiveHistoryRef.current));
+      }
+      const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
+      const hour = now.getHours();
+      const generationContext = {
+        timeOfDay: hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening",
+        idleMinutes: Math.floor((now.getTime() - lastInteractionAtRef.current) / 60_000),
+        lastInteractionResult: lastConversationResultRef.current,
+        behavior: behaviorEngineRef.current.state,
+        personality: personality.traits,
+      };
+      proactiveActiveRef.current = true;
+      void startPetConversation(`Create a gentle proactive greeting from this safe context only: ${JSON.stringify(generationContext)}`, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "proactive").catch(() => { proactiveActiveRef.current = false; setAnimation("idle"); });
+    };
+    testProactiveRef.current = () => check(true);
+    const timer = window.setInterval(() => check(false), 60_000);
+    check(false);
+    return () => { window.clearInterval(timer); testProactiveRef.current = () => undefined; };
+  }, [conversationOpen, conversationStatus, personalityOverrides, proactiveSettings, selectedPackage, userTyping]);
 
   useEffect(() => {
     if (behaviorState !== "idle") return;
@@ -505,8 +596,10 @@ export function PetOverlay() {
     setConversationOpen(false);
     setConversationResponse("");
     setConversationStatus("idle");
+    lastConversationResultRef.current = "none";
     setBehaviorState("idle");
     schedulerRef.current?.notifyActivity();
+    lastInteractionAtRef.current = Date.now();
     lastWindowSnapshotRef.current = null;
     lastWindowFeetXRef.current = null;
     setAnimation("idle");
@@ -752,6 +845,7 @@ export function PetOverlay() {
       if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
       if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
       if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
+      if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
     },
     [],
   );
@@ -789,6 +883,15 @@ export function PetOverlay() {
     } finally {
       if (activeGestureRef.current === gesture) {
         if (!gesture.moved) {
+          if (proactiveMessage) {
+            proactiveHistoryRef.current = recordProactiveOpened(proactiveHistoryRef.current);
+            localStorage.setItem(`deskling.proactiveHistory.${selectedPackage.manifest.id}`, JSON.stringify(proactiveHistoryRef.current));
+            if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
+            proactiveIgnoreTimerRef.current = null;
+            setConversationResponse(proactiveMessage);
+            setProactiveMessage(null);
+            proactiveActiveRef.current = false;
+          }
           setConversationOpen(true);
           setSpeech(null);
         }
@@ -798,6 +901,21 @@ export function PetOverlay() {
         lastWindowFeetXRef.current = null;
       }
     }
+  };
+
+  const openProactiveConversation = () => {
+    if (!proactiveMessage || !selectedPackage) return;
+    proactiveHistoryRef.current = recordProactiveOpened(proactiveHistoryRef.current);
+    localStorage.setItem(`deskling.proactiveHistory.${selectedPackage.manifest.id}`, JSON.stringify(proactiveHistoryRef.current));
+    if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
+    proactiveIgnoreTimerRef.current = null;
+    setConversationResponse(proactiveMessage);
+    setConversationStatus("idle");
+    setProactiveMessage(null);
+    proactiveActiveRef.current = false;
+    setSpeech(null);
+    setConversationOpen(true);
+    lastInteractionAtRef.current = Date.now();
   };
 
   if (error) return <div className="overlay-error">{error}</div>;
@@ -823,6 +941,7 @@ export function PetOverlay() {
           onPointerDown={(event, point, region) => void handlePointerDown(event, point, region)}
           onPointerMove={() => undefined}
           onPointerUp={() => undefined}
+          onSpeechClick={proactiveMessage ? openProactiveConversation : undefined}
         />
       </div>
       {conversationOpen && (
@@ -831,9 +950,11 @@ export function PetOverlay() {
           response={conversationResponse}
           status={conversationStatus}
           runtimeAvailable={runtimeAvailable}
-          onClose={() => setConversationOpen(false)}
+          onClose={() => { setConversationOpen(false); setUserTyping(false); }}
           onSend={async (message) => {
             try {
+              lastInteractionAtRef.current = Date.now();
+              setUserTyping(false);
               setConversationStatus("thinking");
               const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
               await startPetConversation(message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides));
@@ -850,6 +971,7 @@ export function PetOverlay() {
             setConversationResponse("已停止。");
             schedulerRef.current?.notifyActivity();
           }}
+          onTypingChange={setUserTyping}
         />
       )}
       {debug && (

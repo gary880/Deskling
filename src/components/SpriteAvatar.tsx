@@ -20,6 +20,7 @@ interface SpriteAvatarProps {
   ) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>, point: Point) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onSpeechClick?: () => void;
 }
 
 export function SpriteAvatar({
@@ -34,6 +35,7 @@ export function SpriteAvatar({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onSpeechClick,
 }: SpriteAvatarProps) {
   const [frame, setFrame] = useState(0);
   const completedRef = useRef(false);
@@ -102,6 +104,9 @@ export function SpriteAvatar({
           className="speech-bubble"
           style={{ left: displaySpeechX, top: speechAnchor[1] * scale }}
           role="status"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onSpeechClick}
+          data-clickable={Boolean(onSpeechClick)}
         >
           {speech}
         </div>

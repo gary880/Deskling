@@ -338,8 +338,10 @@ button { color: inherit; }
 .speech-bubble {
   position: absolute;
   z-index: 5;
-  min-width: max-content;
-  max-width: 180px;
+  width: max-content;
+  box-sizing: border-box;
+  min-width: 72px;
+  max-width: min(220px, calc(100vw - 24px));
   padding: 8px 12px;
   transform: translate(-50%, calc(-100% - 13px));
   border: 1px solid #d6c9ba;
@@ -347,11 +349,15 @@ button { color: inherit; }
   background: #fffaf2;
   color: #504b43;
   font-size: 11px;
+  line-height: 1.45;
   font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
   box-shadow: 0 7px 18px rgba(63,54,43,.1);
   pointer-events: none;
 }
 .speech-bubble::after { content: ""; position: absolute; left: 10px; bottom: -5px; width: 8px; height: 8px; transform: rotate(45deg); border-right: 1px solid #d6c9ba; border-bottom: 1px solid #d6c9ba; background: #fffaf2; }
+.speech-bubble[data-clickable="true"] { pointer-events: auto; cursor: pointer; }
 
 .debug-layer { position: absolute; inset: 0; pointer-events: none; }
 .debug-hitbox { position: absolute; display: flex; padding: 2px; align-items: flex-end; border: 1px dashed; font: 500 7px/1 "SFMono-Regular", Consolas, monospace; }
@@ -459,6 +465,13 @@ button { color: inherit; }
 .personality-preview { padding: 9px; border-radius: 9px; background: #f7f1e8; }
 .personality-preview small { color: #9a9185; font-size: 8px; }
 .personality-preview p { margin: 5px 0 0; color: #554d44; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
+.proactive-settings { display: grid; gap: 10px; margin: 12px 0; padding: 11px; border: 1px solid #e6d8c9; border-radius: 10px; background: #fbf7f0; }
+.quiet-hours { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.quiet-hours label { display: grid; gap: 5px; color: #71685d; font-size: 8px; }
+.quiet-hours input { min-width: 0; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--ink); font-size: 10px; }
+.privacy-note { color: #8b8175; font-size: 8px; line-height: 1.5; }
+.proactive-test-button { min-height: 32px; border: 1px solid var(--orange); border-radius: 8px; background: #fffaf4; color: var(--orange); font-size: 9px; font-weight: 800; cursor: pointer; }
+.proactive-test-button:disabled { opacity: .45; cursor: default; }
 
 .overlay-facing {
   position: absolute;
