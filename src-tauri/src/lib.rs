@@ -8,6 +8,7 @@ mod agent_runtime;
 mod conversation_history;
 mod desktop_world;
 mod personality;
+mod pet_memory;
 mod pet_packages;
 
 const EVENT_SELECT_PET: &str = "deskling-select-pet";
@@ -118,6 +119,7 @@ fn start_pet_conversation(
     pet_name: String,
     pet_instructions: String,
     purpose: Option<String>,
+    approved_memories: Option<Vec<pet_memory::PetMemory>>,
 ) -> Result<String, String> {
     agent_runtime::start(
         app,
@@ -126,6 +128,7 @@ fn start_pet_conversation(
         pet_name,
         pet_instructions,
         purpose.unwrap_or_else(|| "conversation".into()),
+        approved_memories.unwrap_or_default(),
     )
 }
 
@@ -167,6 +170,39 @@ fn append_conversation_history(
 #[tauri::command]
 fn clear_conversation_history(app: tauri::AppHandle, pet_id: String) -> Result<(), String> {
     conversation_history::clear(&app, &pet_id)
+}
+
+#[tauri::command]
+fn load_pet_memory(
+    app: tauri::AppHandle,
+    pet_id: String,
+    max_entries: usize,
+) -> Result<Vec<pet_memory::PetMemory>, String> {
+    pet_memory::load(&app, &pet_id, max_entries)
+}
+
+#[tauri::command]
+fn save_pet_memory(
+    app: tauri::AppHandle,
+    pet_id: String,
+    memory: pet_memory::PetMemory,
+    max_entries: usize,
+) -> Result<Vec<pet_memory::PetMemory>, String> {
+    pet_memory::save(&app, &pet_id, memory, max_entries)
+}
+
+#[tauri::command]
+fn delete_pet_memory(
+    app: tauri::AppHandle,
+    pet_id: String,
+    memory_id: String,
+) -> Result<Vec<pet_memory::PetMemory>, String> {
+    pet_memory::delete(&app, &pet_id, &memory_id)
+}
+
+#[tauri::command]
+fn clear_pet_memory(app: tauri::AppHandle, pet_id: String) -> Result<(), String> {
+    pet_memory::clear(&app, &pet_id)
 }
 
 #[tauri::command]
@@ -414,6 +450,10 @@ pub fn run() {
             load_conversation_history,
             append_conversation_history,
             clear_conversation_history,
+            load_pet_memory,
+            save_pet_memory,
+            delete_pet_memory,
+            clear_pet_memory,
             load_pet_personality,
             save_pet_personality,
             reset_pet_personality

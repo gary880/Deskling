@@ -3,6 +3,7 @@ import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
 import type { ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings } from "../agent/conversation";
 import type { PetPersonalityOverride } from "../domain/avatar";
+import type { PetMemory } from "../domain/petMemory";
 
 export const DESKTOP_EVENTS = {
   selectPet: "deskling-select-pet",
@@ -29,6 +30,8 @@ export const DESKTOP_EVENTS = {
   agentActivity: "deskling-agent-activity",
   conversation: "deskling-conversation-event",
   personalityChanged: "deskling-personality-changed",
+  memoryChanged: "deskling-memory-changed",
+  memorySettingsChanged: "deskling-memory-settings-changed",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -45,6 +48,7 @@ export const DESKTOP_STORAGE = {
   wakeOnWindowChange: "deskling.wakeOnWindowChange",
   proactiveSettings: "deskling.proactiveSettings",
   conversationHistorySettings: "deskling.conversationHistorySettings",
+  petMemorySettings: "deskling.petMemorySettings",
 } as const;
 
 export function isDesktopRuntime(): boolean {
@@ -98,9 +102,44 @@ export async function agentRuntimeAvailable(): Promise<boolean> {
   return invoke<boolean>("agent_runtime_available");
 }
 
-export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation"): Promise<string> {
+export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation", approvedMemories: PetMemory[] = []): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose });
+  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose, approvedMemories });
+}
+
+export async function loadPetMemory(petId: string, maxEntries: number): Promise<PetMemory[]> {
+  if (!isDesktopRuntime()) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<PetMemory[]>("load_pet_memory", { petId, maxEntries });
+}
+
+export async function savePetMemory(petId: string, memory: PetMemory, maxEntries: number): Promise<PetMemory[]> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const items = await invoke<PetMemory[]>("save_pet_memory", { petId, memory, maxEntries });
+  void Promise.allSettled([
+    emitTo("pet", DESKTOP_EVENTS.memoryChanged, petId),
+    emitTo("control", DESKTOP_EVENTS.memoryChanged, petId),
+  ]);
+  return items;
+}
+
+export async function deletePetMemory(petId: string, memoryId: string): Promise<PetMemory[]> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const items = await invoke<PetMemory[]>("delete_pet_memory", { petId, memoryId });
+  void Promise.allSettled([
+    emitTo("pet", DESKTOP_EVENTS.memoryChanged, petId),
+    emitTo("control", DESKTOP_EVENTS.memoryChanged, petId),
+  ]);
+  return items;
+}
+
+export async function clearPetMemory(petId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("clear_pet_memory", { petId });
+  void Promise.allSettled([
+    emitTo("pet", DESKTOP_EVENTS.memoryChanged, petId),
+    emitTo("control", DESKTOP_EVENTS.memoryChanged, petId),
+  ]);
 }
 
 export async function loadPetPersonality(petId: string): Promise<PetPersonalityOverride> {
