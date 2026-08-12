@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "bella",
+  "name": "Bella",
+  "author": "Community asset",
+  "renderer": {
+    "type": "sprite",
+    "asset": "spritesheet.webp",
+    "frameWidth": 192,
+    "frameHeight": 208
+  },
+  "animations": {
+    "idle": { "row": 0, "frames": 6, "fps": 4, "loop": true },
+    "walk": { "row": 1, "frames": 8, "fps": 8, "loop": true },
+    "look": { "row": 2, "frames": 8, "fps": 7, "loop": true },
+    "happy": { "row": 3, "frames": 4, "fps": 7, "loop": false },
+    "talking": { "row": 4, "frames": 5, "fps": 7, "loop": true },
+    "thinking": { "row": 5, "frames": 8, "fps": 5, "loop": true },
+    "surprised": { "row": 6, "frames": 6, "fps": 6, "loop": false },
+    "annoyed": { "row": 7, "frames": 6, "fps": 6, "loop": false },
+    "sleep": { "row": 8, "frames": 6, "fps": 3, "loop": true }
+  },
+  "anchors": {
+    "feet": [96, 190],
+    "head": [96, 83],
+    "speechBubble": [127, 28]
+  },
+  "hitboxes": {
+    "body": { "x": 30, "y": 80, "width": 132, "height": 112 },
+    "head": { "x": 32, "y": 22, "width": 128, "height": 143 }
+  }
+}

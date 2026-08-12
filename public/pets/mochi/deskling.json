@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "mochi",
+  "name": "Mochi",
+  "author": "Deskling MVP",
+  "renderer": {
+    "type": "sprite",
+    "asset": "spritesheet.webp",
+    "frameWidth": 181,
+    "frameHeight": 181
+  },
+  "animations": {
+    "idle": { "row": 0, "frames": 8, "fps": 5, "loop": true },
+    "walk": { "row": 1, "frames": 8, "fps": 9, "loop": true },
+    "sleep": { "row": 2, "frames": 8, "fps": 3, "loop": true },
+    "thinking": { "row": 3, "frames": 8, "fps": 5, "loop": true },
+    "talking": { "row": 4, "frames": 8, "fps": 7, "loop": true },
+    "happy": { "row": 5, "frames": 8, "fps": 8, "loop": false }
+  },
+  "anchors": {
+    "feet": [91, 176],
+    "head": [91, 61],
+    "speechBubble": [122, 24]
+  },
+  "hitboxes": {
+    "body": { "x": 31, "y": 38, "width": 119, "height": 139 },
+    "head": { "x": 43, "y": 23, "width": 96, "height": 88 }
+  }
+}
