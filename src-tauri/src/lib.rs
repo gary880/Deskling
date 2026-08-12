@@ -14,6 +14,93 @@ const EVENT_TOGGLE_WINDOW_AWARE: &str = "deskling-toggle-window-aware";
 const EVENT_TOGGLE_FOLLOW_ACTIVE_WINDOW: &str = "deskling-toggle-follow-active-window";
 const EVENT_TOGGLE_DESKTOP_FLOOR_FALLBACK: &str = "deskling-toggle-desktop-floor-fallback";
 const EVENT_ACCESSIBILITY_STATUS_CHANGED: &str = "deskling-accessibility-status-changed";
+const EVENT_AGENT_ACTIVITY: &str = "deskling-agent-activity";
+static LAST_AGENT_ACTIVITY_TIMESTAMP: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentActivityEvent {
+    source: String,
+    activity: String,
+    message: Option<String>,
+    timestamp: u64,
+}
+
+fn now_millis() -> u64 {
+    let wall_clock = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    LAST_AGENT_ACTIVITY_TIMESTAMP
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |previous| Some(wall_clock.max(previous.saturating_add(1))),
+        )
+        .map(|previous| wall_clock.max(previous.saturating_add(1)))
+        .unwrap_or(wall_clock)
+}
+
+fn valid_agent_activity(activity: &str) -> bool {
+    matches!(
+        activity,
+        "idle" | "thinking" | "talking" | "success" | "error"
+    )
+}
+
+#[cfg(test)]
+mod agent_activity_tests {
+    use super::valid_agent_activity;
+
+    #[test]
+    fn accepts_only_semantic_activity_names() {
+        for activity in ["idle", "thinking", "talking", "success", "error"] {
+            assert!(valid_agent_activity(activity));
+        }
+        for activity in ["", "walk", "Thinking", "../thinking"] {
+            assert!(!valid_agent_activity(activity));
+        }
+    }
+}
+
+#[tauri::command]
+fn report_agent_activity(
+    app: tauri::AppHandle,
+    source: String,
+    activity: String,
+    message: Option<String>,
+) -> Result<AgentActivityEvent, String> {
+    if !matches!(source.as_str(), "codex" | "manual") {
+        return Err("source must be codex or manual".into());
+    }
+    if !valid_agent_activity(&activity) {
+        return Err("activity must be idle, thinking, talking, success, or error".into());
+    }
+    let message = message
+        .map(|value| value.trim().chars().take(160).collect::<String>())
+        .filter(|value| !value.is_empty());
+    let event = AgentActivityEvent {
+        source,
+        activity,
+        message,
+        timestamp: now_millis(),
+    };
+    emit_to_frontends(&app, EVENT_AGENT_ACTIVITY, event.clone());
+    Ok(event)
+}
+
+#[tauri::command]
+fn clear_agent_activity(app: tauri::AppHandle) -> AgentActivityEvent {
+    let event = AgentActivityEvent {
+        source: "manual".into(),
+        activity: "idle".into(),
+        message: None,
+        timestamp: now_millis(),
+    };
+    emit_to_frontends(&app, EVENT_AGENT_ACTIVITY, event.clone());
+    event
+}
 
 #[tauri::command]
 fn accessibility_permission_status() -> desktop_world::AccessibilityPermissionStatus {
@@ -227,7 +314,9 @@ pub fn run() {
             position_pet_window,
             import_pet_zip,
             list_installed_pets,
-            remove_installed_pet
+            remove_installed_pet,
+            report_agent_activity,
+            clear_agent_activity
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

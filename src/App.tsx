@@ -6,12 +6,20 @@ import {
   type AutonomySettings,
   type SleepAfterMinutes,
 } from "./behavior/AutonomousBehaviorScheduler";
+import {
+  AGENT_ACTIVITY_ANIMATION,
+  AGENT_REACTION_DURATION_MS,
+  AGENT_ACTIVITY_SPEECH,
+  type AgentActivityEvent,
+  type AgentActivity,
+} from "./behavior/AgentActivity";
 import type { Facing, HitRegion, Point } from "./domain/avatar";
 import { resolveAnimation } from "./domain/fallback";
 import {
   DESKTOP_EVENTS,
   DESKTOP_STORAGE,
   choosePetZip,
+  clearAgentActivity,
   emitToPet,
   importPetZip,
   isDesktopRuntime,
@@ -19,6 +27,7 @@ import {
   readBooleanSetting,
   readNumberSetting,
   removeInstalledPet,
+  reportAgentActivity,
   showPetWindow,
   writeBooleanSetting,
   writeNumberSetting,
@@ -51,6 +60,7 @@ const SPEECH: Record<string, string> = {
   head: "嘿嘿，好癢。",
 };
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
+const AGENT_ACTIVITIES: readonly AgentActivity[] = ["thinking", "talking", "success", "error"];
 
 export function App() {
   const { packages, error: catalogError, reload: reloadCatalog } = usePetCatalog();
@@ -59,6 +69,7 @@ export function App() {
     () => localStorage.getItem(DESKTOP_STORAGE.petId) ?? "mochi",
   );
   const [animation, setAnimation] = useState("idle");
+  const [agentActivity, setAgentActivity] = useState<AgentActivity>("idle");
   const [facing, setFacing] = useState<Facing>("right");
   const [debug, setDebug] = useState(false);
   const [speech, setSpeech] = useState<string | null>("點一下舞台，我會走過去。");
@@ -105,6 +116,7 @@ export function App() {
   const motionRef = useRef(new MotionEngine({ x: 420, y: 0 }));
   const rendererRef = useRef(new SpriteRenderer());
   const speechTimerRef = useRef<number | null>(null);
+  const agentActivityTimerRef = useRef<number | null>(null);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -169,9 +181,24 @@ export function App() {
         DESKTOP_EVENTS.accessibilityStatusChanged,
         setPermissionStatus,
       ),
+      listenDesktop<AgentActivityEvent>(DESKTOP_EVENTS.agentActivity, (event) => {
+        if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
+        setAgentActivity(event.activity);
+        setAnimation(AGENT_ACTIVITY_ANIMATION[event.activity]);
+        const message = event.message ?? AGENT_ACTIVITY_SPEECH[event.activity];
+        if (message) showSpeech(message);
+        if (event.activity === "idle") setSpeech(null);
+        if (event.activity === "success" || event.activity === "error") {
+          agentActivityTimerRef.current = window.setTimeout(() => {
+            setAgentActivity("idle");
+            setAnimation("idle");
+            agentActivityTimerRef.current = null;
+          }, AGENT_REACTION_DURATION_MS);
+        }
+      }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, []);
+  }, [showSpeech]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -234,6 +261,7 @@ export function App() {
   useEffect(
     () => () => {
       if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
+      if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
     },
     [],
   );
@@ -247,6 +275,21 @@ export function App() {
       const destination = positionX > stageWidth / 2 ? 110 : stageWidth - 110;
       motionRef.current.moveTo({ x: destination, y: 0 });
     }
+  };
+
+  const simulateAgentActivity = async (activity: AgentActivity) => {
+    setAgentActivity(activity);
+    setAnimation(AGENT_ACTIVITY_ANIMATION[activity]);
+    const message = AGENT_ACTIVITY_SPEECH[activity];
+    if (message) showSpeech(message);
+    await reportAgentActivity(activity, "manual", message ?? undefined);
+  };
+
+  const resetAgentActivity = async () => {
+    setAgentActivity("idle");
+    setAnimation("idle");
+    setSpeech(null);
+    await clearAgentActivity();
   };
 
   const updateDebug = (enabled: boolean) => {
@@ -500,6 +543,26 @@ export function App() {
                   <small>{behavior}</small>
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="panel-section">
+            <p className="eyebrow">AGENT ACTIVITY</p>
+            <p className="activity-hint">測試 Codex／Agent 語意動畫與 fallback。</p>
+            <div className="behavior-grid activity-grid">
+              {AGENT_ACTIVITIES.map((activity) => (
+                <button
+                  className={agentActivity === activity ? "active" : ""}
+                  key={activity}
+                  onClick={() => void simulateAgentActivity(activity)}
+                >
+                  <span>{activity === "thinking" ? "思考" : activity === "talking" ? "說話" : activity === "success" ? "完成" : "錯誤"}</span>
+                  <small>{activity}</small>
+                </button>
+              ))}
+              <button className={agentActivity === "idle" ? "active" : ""} onClick={() => void resetAgentActivity()}>
+                <span>清除</span><small>idle</small>
+              </button>
             </div>
           </div>
 

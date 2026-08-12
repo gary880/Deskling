@@ -14,6 +14,9 @@ describe("resolveAnimation", () => {
       "surprised",
     );
     expect(resolveAnimation("thinking", { idle: animation(0), look: animation(1) })).toBe("look");
+    expect(resolveAnimation("talking", { idle: animation(0), thinking: animation(1) })).toBe(
+      "thinking",
+    );
   });
 
   it("never crashes when idle is also missing", () => {

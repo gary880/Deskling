@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
 
 export const DESKTOP_EVENTS = {
   selectPet: "deskling-select-pet",
@@ -18,6 +19,7 @@ export const DESKTOP_EVENTS = {
   accessibilityStatusChanged: "deskling-accessibility-status-changed",
   autonomySettings: "deskling-autonomy-settings",
   petCatalogChanged: "deskling-pet-catalog-changed",
+  agentActivity: "deskling-agent-activity",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -61,6 +63,22 @@ export async function listInstalledPets(): Promise<InstalledPetDescriptor[]> {
 export async function removeInstalledPet(id: string): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("remove_installed_pet", { id });
+}
+
+export async function reportAgentActivity(
+  activity: AgentActivity,
+  source: AgentActivitySource = "manual",
+  message?: string,
+): Promise<AgentActivityEvent> {
+  if (!isDesktopRuntime()) return { source, activity, message, timestamp: Date.now() };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AgentActivityEvent>("report_agent_activity", { source, activity, message });
+}
+
+export async function clearAgentActivity(): Promise<AgentActivityEvent> {
+  if (!isDesktopRuntime()) return { source: "manual", activity: "idle", timestamp: Date.now() };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AgentActivityEvent>("clear_agent_activity");
 }
 
 export async function emitToPet<T>(event: string, payload: T): Promise<void> {

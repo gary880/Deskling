@@ -15,10 +15,18 @@
 
 * { box-sizing: border-box; }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 0;
   background:
     radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.72), transparent 30%),
     #eeeae2;
@@ -30,7 +38,7 @@ button { color: inherit; }
 .app-shell {
   width: min(1180px, calc(100vw - 40px));
   height: min(820px, calc(100vh - 40px));
-  min-height: 610px;
+  min-height: 0;
   margin: 20px auto;
   overflow: hidden;
   border: 1px solid rgba(76, 70, 59, 0.2);
@@ -189,6 +197,8 @@ button { color: inherit; }
 .behavior-grid span, .behavior-grid small { display: block; }
 .behavior-grid span { font-size: 12px; font-weight: 700; }
 .behavior-grid small { margin-top: 3px; color: #989083; font: 400 8px/1 "SFMono-Regular", Consolas, monospace; }
+.activity-hint { margin: -3px 6px 9px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.activity-grid button:last-child { grid-column: 1 / -1; min-height: 42px; }
 
 .debug-toggle {
   display: grid;
@@ -421,7 +431,7 @@ button { color: inherit; }
 }
 
 @media (max-width: 800px) {
-  .app-shell { width: 100%; min-height: 100vh; margin: 0; border: 0; border-radius: 0; }
+  .app-shell { width: 100%; height: 100%; margin: 0; border: 0; border-radius: 0; }
   .workspace { grid-template-columns: 1fr; }
   .control-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .panel-section--bottom { margin-top: 24px !important; }

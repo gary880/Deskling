@@ -4,7 +4,7 @@ const FALLBACKS: Record<string, string[]> = {
   annoyed: ["surprised", "idle"],
   surprised: ["idle"],
   happy: ["idle"],
-  talking: ["idle"],
+  talking: ["thinking", "idle"],
   thinking: ["look", "idle"],
   look: ["idle"],
   sleep: ["idle"],

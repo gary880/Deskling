@@ -15,6 +15,14 @@ import {
   type SurfaceEvent,
   type SurfaceState,
 } from "../behavior/BehaviorEngine";
+import {
+  AGENT_ACTIVITY_ANIMATION,
+  AGENT_ACTIVITY_SPEECH,
+  AGENT_ACTIVITY_TIMEOUT_MS,
+  AGENT_REACTION_DURATION_MS,
+  AgentActivityEngine,
+  type AgentActivityEvent,
+} from "../behavior/AgentActivity";
 import { SpriteAvatar } from "../components/SpriteAvatar";
 import type { Facing, HitRegion, Point } from "../domain/avatar";
 import { usePetCatalog } from "../hooks/usePetCatalog";
@@ -95,6 +103,7 @@ export function PetOverlay() {
   );
   const [behaviorState, setBehaviorState] = useState<BehaviorState>("idle");
   const [surfaceState, setSurfaceState] = useState<SurfaceState>("manual");
+  const [agentEvent, setAgentEvent] = useState<AgentActivityEvent | null>(null);
   const [autonomySettings, setAutonomySettings] = useState<AutonomySettings>(() => ({
     enabled: readBooleanSetting(
       DESKTOP_STORAGE.autonomousBehavior,
@@ -118,9 +127,11 @@ export function PetOverlay() {
   const speechTimerRef = useRef<number | null>(null);
   const idleVariationTimerRef = useRef<number | null>(null);
   const reactionTimerRef = useRef<number | null>(null);
+  const agentActivityTimerRef = useRef<number | null>(null);
   const activeGestureRef = useRef<ActivePetGesture | null>(null);
   const desktopMotionTokenRef = useRef(0);
   const behaviorEngineRef = useRef(new BehaviorEngine());
+  const agentActivityEngineRef = useRef(new AgentActivityEngine());
   const schedulerRef = useRef<AutonomousBehaviorScheduler | null>(null);
   const surfaceModeRef = useRef<SurfaceState>("manual");
   const lastWindowSnapshotRef = useRef<DesktopWindowSnapshot | null>(null);
@@ -300,7 +311,7 @@ export function PetOverlay() {
   useEffect(() => {
     const scheduler = new AutonomousBehaviorScheduler(autonomySettings, {
       onIdleVariation: () => {
-        if (behaviorEngineRef.current.state !== "idle") return;
+        if (behaviorEngineRef.current.state !== "idle" || agentActivityEngineRef.current.event) return;
         setAnimation("thinking");
         if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
         idleVariationTimerRef.current = window.setTimeout(() => {
@@ -308,8 +319,11 @@ export function PetOverlay() {
           if (behaviorEngineRef.current.state === "idle") setAnimation("idle");
         }, 4_000);
       },
-      onRoamRequested: () => void startDesktopWalkRef.current(),
+      onRoamRequested: () => {
+        if (!agentActivityEngineRef.current.event) void startDesktopWalkRef.current();
+      },
       onSleepRequested: () => {
+        if (agentActivityEngineRef.current.event) return;
         stopDesktopMotion();
         dispatchBehavior("sleepRequested");
       },
@@ -388,9 +402,41 @@ export function PetOverlay() {
         setPermissionStatus,
       ),
       listenDesktop<AutonomySettings>(DESKTOP_EVENTS.autonomySettings, setAutonomySettings),
+      listenDesktop<AgentActivityEvent>(DESKTOP_EVENTS.agentActivity, (event) => {
+        if (!agentActivityEngineRef.current.accept(event)) return;
+        if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
+        agentActivityTimerRef.current = null;
+        stopDesktopMotion();
+        dispatchBehavior("wakeRequested");
+        schedulerRef.current?.notifyActivity();
+        setAgentEvent(agentActivityEngineRef.current.event);
+        const duration = event.activity === "success" || event.activity === "error"
+          ? AGENT_REACTION_DURATION_MS
+          : event.activity === "idle" ? 0 : AGENT_ACTIVITY_TIMEOUT_MS;
+        if (duration > 0) {
+          agentActivityTimerRef.current = window.setTimeout(() => {
+            if (agentActivityEngineRef.current.event?.timestamp !== event.timestamp) return;
+            agentActivityEngineRef.current.clear();
+            setAgentEvent(null);
+            schedulerRef.current?.notifyActivity();
+            agentActivityTimerRef.current = null;
+          }, duration);
+        }
+      }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
   }, [dispatchBehavior, showSpeech, startReaction, stopDesktopMotion]);
+
+  useEffect(() => {
+    if (behaviorState !== "idle") return;
+    if (!agentEvent) {
+      setAnimation("idle");
+      return;
+    }
+    setAnimation(AGENT_ACTIVITY_ANIMATION[agentEvent.activity]);
+    const message = agentEvent.message ?? AGENT_ACTIVITY_SPEECH[agentEvent.activity];
+    if (message) showSpeech(message, agentEvent.activity === "thinking" || agentEvent.activity === "talking" ? 4_000 : AGENT_REACTION_DURATION_MS);
+  }, [agentEvent, behaviorState, showSpeech]);
 
   useEffect(() => {
     if (!selectedPackage) return;
@@ -399,7 +445,11 @@ export function PetOverlay() {
     const renderer = new SpriteRenderer();
     rendererRef.current = renderer;
     void renderer.load(selectedPackage).then(() => renderer.play("idle"));
-    behaviorEngineRef.current.clear();
+      behaviorEngineRef.current.clear();
+    agentActivityEngineRef.current.clear();
+    if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
+    agentActivityTimerRef.current = null;
+    setAgentEvent(null);
     setBehaviorState("idle");
     schedulerRef.current?.notifyActivity();
     lastWindowSnapshotRef.current = null;
@@ -643,6 +693,7 @@ export function PetOverlay() {
       if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
       if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
       if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
+      if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
     },
     [],
   );
@@ -701,6 +752,7 @@ export function PetOverlay() {
       className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}
       data-behavior-state={behaviorState}
       data-surface-state={surfaceState}
+      data-agent-activity={agentEvent?.activity ?? "idle"}
     >
       <div className="pet-overlay__avatar">
         <SpriteAvatar
