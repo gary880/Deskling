@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod desktop_world;
+mod pet_packages;
 
 const EVENT_SELECT_PET: &str = "deskling-select-pet";
 const EVENT_TOGGLE_CLICK_THROUGH: &str = "deskling-toggle-click-through";
@@ -54,6 +55,31 @@ fn position_pet_window(window: tauri::WebviewWindow, x: f64, y: f64) -> Result<(
             .set_position(tauri::LogicalPosition::new(x, y))
             .map_err(|error| error.to_string())
     }
+}
+
+#[tauri::command]
+async fn import_pet_zip(
+    app: tauri::AppHandle,
+    zip_path: String,
+    replace: bool,
+) -> Result<pet_packages::InstalledPet, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        pet_packages::import_pet_zip(&app, std::path::Path::new(&zip_path), replace)
+    })
+    .await
+    .map_err(|error| format!("Pet import task failed: {error}"))?
+}
+
+#[tauri::command]
+fn list_installed_pets(app: tauri::AppHandle) -> Result<Vec<pet_packages::InstalledPet>, String> {
+    pet_packages::list_installed_pets(&app)
+}
+
+#[tauri::command]
+async fn remove_installed_pet(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || pet_packages::remove_installed_pet(&app, &id))
+        .await
+        .map_err(|error| format!("Pet removal task failed: {error}"))?
 }
 
 fn show_control_window(app: &tauri::AppHandle) {
@@ -192,12 +218,16 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             accessibility_permission_status,
             request_accessibility_permission,
             open_accessibility_settings,
             active_desktop_window,
-            position_pet_window
+            position_pet_window,
+            import_pet_zip,
+            list_installed_pets,
+            remove_installed_pet
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

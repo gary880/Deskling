@@ -17,6 +17,7 @@ export const DESKTOP_EVENTS = {
   toggleDesktopFloorFallback: "deskling-toggle-desktop-floor-fallback",
   accessibilityStatusChanged: "deskling-accessibility-status-changed",
   autonomySettings: "deskling-autonomy-settings",
+  petCatalogChanged: "deskling-pet-catalog-changed",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -35,6 +36,31 @@ export const DESKTOP_STORAGE = {
 
 export function isDesktopRuntime(): boolean {
   return isTauri();
+}
+
+export interface InstalledPetDescriptor { id: string; baseDir: string; manifest: unknown }
+
+export async function choosePetZip(): Promise<string | null> {
+  if (!isDesktopRuntime()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selected = await open({ multiple: false, directory: false, filters: [{ name: "Pet ZIP", extensions: ["zip"] }] });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function importPetZip(zipPath: string, replace = false): Promise<InstalledPetDescriptor> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<InstalledPetDescriptor>("import_pet_zip", { zipPath, replace });
+}
+
+export async function listInstalledPets(): Promise<InstalledPetDescriptor[]> {
+  if (!isDesktopRuntime()) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<InstalledPetDescriptor[]>("list_installed_pets");
+}
+
+export async function removeInstalledPet(id: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("remove_installed_pet", { id });
 }
 
 export async function emitToPet<T>(event: string, payload: T): Promise<void> {

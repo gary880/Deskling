@@ -6,6 +6,7 @@ import { SpriteRenderer } from "./SpriteRenderer";
 
 function mochiPackage(): PetPackage {
   return {
+    source: "bundled",
     manifest: validateManifest(manifestJson),
     manifestUrl: "/pets/mochi/deskling.json",
     assetUrl: "/pets/mochi/spritesheet.webp",

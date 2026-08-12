@@ -43,7 +43,13 @@
         "visible": false
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/pets/**"]
+      }
+    }
   },
   "bundle": {
     "active": true,

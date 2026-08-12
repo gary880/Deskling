@@ -11,11 +11,14 @@ import { resolveAnimation } from "./domain/fallback";
 import {
   DESKTOP_EVENTS,
   DESKTOP_STORAGE,
+  choosePetZip,
   emitToPet,
+  importPetZip,
   isDesktopRuntime,
   listenDesktop,
   readBooleanSetting,
   readNumberSetting,
+  removeInstalledPet,
   showPetWindow,
   writeBooleanSetting,
   writeNumberSetting,
@@ -50,7 +53,8 @@ const SPEECH: Record<string, string> = {
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 
 export function App() {
-  const { packages, error: catalogError } = usePetCatalog();
+  const { packages, error: catalogError, reload: reloadCatalog } = usePetCatalog();
+  const [packageStatus, setPackageStatus] = useState<{ kind: "busy" | "success" | "error"; message: string } | null>(null);
   const [selectedId, setSelectedId] = useState(
     () => localStorage.getItem(DESKTOP_STORAGE.petId) ?? "mochi",
   );
@@ -324,6 +328,48 @@ export function App() {
     if (status === "denied") await openAccessibilitySettings();
   };
 
+  const handleImport = async () => {
+    const zipPath = await choosePetZip();
+    if (!zipPath) return;
+    setPackageStatus({ kind: "busy", message: "正在安全檢查與安裝 ZIP…" });
+    try {
+      const installed = await importPetZip(zipPath);
+      setPackageStatus({ kind: "success", message: `${installed.id} 安裝完成` });
+      reloadCatalog();
+    } catch (error) {
+      const message = String(error);
+      const conflict = message.match(/PET_ID_CONFLICT:([a-z0-9-]+)/);
+      if (conflict && window.confirm(`${conflict[1]} 已安裝。要明確替換現有版本嗎？`)) {
+        try {
+          const installed = await importPetZip(zipPath, true);
+          setPackageStatus({ kind: "success", message: `${installed.id} 已替換` });
+          reloadCatalog();
+          return;
+        } catch (replaceError) {
+          setPackageStatus({ kind: "error", message: String(replaceError) });
+          return;
+        }
+      }
+      setPackageStatus({ kind: "error", message: conflict ? "已取消替換；原有 package 未變更。" : message });
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    if (!window.confirm(`移除已安裝的 ${id}？`)) return;
+    try {
+      if (selectedId === id) {
+        setSelectedId("mochi");
+        localStorage.setItem(DESKTOP_STORAGE.petId, "mochi");
+        await emitToPet(DESKTOP_EVENTS.selectPet, "mochi");
+      }
+      await removeInstalledPet(id);
+      setPackageStatus({ kind: "success", message: `${id} 已移除` });
+      reloadCatalog();
+    } catch (error) {
+      setPackageStatus({ kind: "error", message: String(error) });
+    }
+  };
+
   const stagePoint = (clientX: number): number => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return positionX;
@@ -409,26 +455,34 @@ export function App() {
         <aside className="control-panel">
           <div className="panel-section">
             <p className="eyebrow">YOUR DESKLINGS</p>
+            <button className="import-pet-button" disabled={!isDesktopRuntime() || packageStatus?.kind === "busy"} onClick={() => void handleImport()}>
+              Import Pet ZIP
+            </button>
+            <details className="import-guide">
+              <summary>ZIP 格式說明</summary>
+              <div className="import-guide__content">
+                <p><code>deskling.json</code> 與 <code>spritesheet.webp</code> 必須直接位於 ZIP 最外層。</p>
+                <pre>{`my-pet.zip
+├── deskling.json
+├── spritesheet.webp
+└── sounds/ (選用)`}</pre>
+                <p>ZIP 上限 25 MB，解壓後 100 MB／100 個項目。音效支援 WAV、MP3、OGG。</p>
+                <p>相同 ID 會先詢問是否替換；內建角色不能覆寫或移除。</p>
+              </div>
+            </details>
+            {packageStatus && <div className={`package-status package-status--${packageStatus.kind}`} role="status">{packageStatus.message}</div>}
             <div className="pet-list">
               {packages.map((pkg) => (
-                <button
+                <div
                   className={`pet-option ${pkg.manifest.id === manifest.id ? "pet-option--active" : ""}`}
                   key={pkg.manifest.id}
-                  onClick={() => setSelectedId(pkg.manifest.id)}
                 >
-                  <span
-                    className="pet-option__portrait"
-                    style={{
-                      backgroundImage: `url(${pkg.assetUrl})`,
-                      backgroundSize: `${pkg.imageWidth * (44 / pkg.manifest.renderer.frameWidth)}px auto`,
-                    }}
-                  />
-                  <span>
-                    <strong>{pkg.manifest.name}</strong>
-                    <small>{pkg.manifest.author}</small>
-                  </span>
-                  <i aria-hidden="true">›</i>
-                </button>
+                  <button className="pet-option__select" onClick={() => setSelectedId(pkg.manifest.id)}>
+                    <span className="pet-option__portrait" style={{ backgroundImage: `url(${pkg.assetUrl})`, backgroundSize: `${pkg.imageWidth * (44 / pkg.manifest.renderer.frameWidth)}px auto` }} />
+                    <span><strong>{pkg.manifest.name}</strong><small>{pkg.manifest.author}</small><em>{pkg.source}</em></span>
+                  </button>
+                  {pkg.source === "installed" && <button className="pet-option__remove" aria-label={`移除 ${pkg.manifest.name}`} onClick={() => void handleRemove(pkg.manifest.id)}>×</button>}
+                </div>
               ))}
             </div>
           </div>

@@ -35,6 +35,7 @@ export interface PetManifest {
 }
 
 export interface PetPackage {
+  source: "bundled" | "installed";
   manifest: PetManifest;
   manifestUrl: string;
   assetUrl: string;
