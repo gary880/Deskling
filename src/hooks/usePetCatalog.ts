@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import type { PetPackage } from "../domain/avatar";
-import { loadInstalledPetPackage, loadPetPackage } from "../domain/packageLoader";
+import {
+  loadInstalledOpenPetsPackage,
+  loadInstalledPetPackage,
+  loadPetPackage,
+} from "../domain/packageLoader";
 import { findDuplicateIds } from "../domain/validation";
 import { DESKTOP_EVENTS, listInstalledPets, listenDesktop } from "../desktop/bridge";
 
@@ -26,7 +30,9 @@ export function usePetCatalog(): PetCatalogState {
           Promise.all(manifestUrls.map(loadPetPackage)), listInstalledPets(),
         ]);
         const loadedInstalled = await Promise.all(installed.map((pet) =>
-          loadInstalledPetPackage(pet.manifest, pet.baseDir)));
+          pet.petManifest !== undefined
+            ? loadInstalledOpenPetsPackage(pet.petManifest, pet.extension, pet.baseDir, pet.frameCounts)
+            : loadInstalledPetPackage(pet.manifest, pet.baseDir)));
         const loaded = [...bundled, ...loadedInstalled];
         const duplicates = findDuplicateIds(loaded.map((pkg) => pkg.manifest));
         if (duplicates.length) throw new Error(`重複的 pet id：${duplicates.join(", ")}`);

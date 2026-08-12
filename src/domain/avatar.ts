@@ -8,6 +8,8 @@ export interface AnimationDefinition {
   frames: number;
   fps: number;
   loop: boolean;
+  facingRows?: Partial<Record<Facing, number>>;
+  facingFrames?: Partial<Record<Facing, number>>;
 }
 
 export interface Rect {
@@ -44,6 +46,8 @@ export interface PetManifest {
   id: string;
   name: string;
   author: string;
+  description?: string;
+  compatibilityProfile?: "codex-pets-8x9";
   renderer: {
     type: "sprite";
     asset: string;

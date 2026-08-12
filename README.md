@@ -30,7 +30,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 ## 已完成範圍
 
-- `deskling.json` package manifest 與 runtime validation
+- OpenPets / Codex Pets `pet.json` loader 與固定 8×9 atlas adapter
+- 選用的 `deskling.json` sidecar、雙層 compatibility/enhancement validation
 - WebP spritesheet renderer、語意動畫 ID 與 fallback
 - `feet`、`head`、`speechBubble` anchors
 - `body`、`head` hitboxes
@@ -51,7 +52,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - 每隻 Pet 獨立、由使用者明確確認的本機 memory，以及敏感資料防護與 prompt context budget
 - 安全的 Pet ZIP import、manifest／asset validation、衝突確認與原子安裝
 
-Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `deskling.json` 與 `spritesheet.webp` 的資料夾，再將 manifest URL 加進 catalog 即可。
+Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `pet.json` 與 `spritesheet.webp` 的 OpenPets package，再將 `pet.json` URL 加進 catalog；anchor、hitbox、播放設定、聲音與 personality 可放在選用的 `deskling.json` sidecar。舊版完整 `deskling.json` package 仍可載入與匯入。
 
 目前優先支援 macOS。透明背景使用 Tauri 的 `macOSPrivateApi`，適合直接散佈與公證，但不符合 Mac App Store 的 private API 規則。其他平台的 window awareness 仍留在後續切片。
 

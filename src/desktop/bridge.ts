@@ -57,7 +57,14 @@ export function isDesktopRuntime(): boolean {
   return isTauri();
 }
 
-export interface InstalledPetDescriptor { id: string; baseDir: string; manifest: unknown }
+export interface InstalledPetDescriptor {
+  id: string;
+  baseDir: string;
+  manifest?: unknown;
+  petManifest?: unknown;
+  extension?: unknown;
+  frameCounts?: number[];
+}
 
 export async function choosePetZip(): Promise<string | null> {
   if (!isDesktopRuntime()) return null;

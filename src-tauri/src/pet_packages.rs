@@ -21,7 +21,14 @@ pub const CATALOG_CHANGED_EVENT: &str = "deskling-pet-catalog-changed";
 pub struct InstalledPet {
     pub id: String,
     pub base_dir: String,
-    pub manifest: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pet_manifest: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_counts: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +55,15 @@ struct RendererRef {
     asset: String,
     frame_width: u64,
     frame_height: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenPetsManifestRef {
+    id: String,
+    display_name: String,
+    description: String,
+    spritesheet_path: String,
 }
 
 fn pets_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -85,6 +101,7 @@ fn extension(path: &Path) -> Option<String> {
 }
 fn allowed_file(path: &Path) -> bool {
     path == Path::new("deskling.json")
+        || path == Path::new("pet.json")
         || matches!(
             extension(path).as_deref(),
             Some("webp" | "wav" | "mp3" | "ogg")
@@ -318,6 +335,98 @@ fn read_manifest(root: &Path) -> Result<(String, Value), String> {
     let id = validate_manifest(&raw, root)?;
     Ok((id, raw))
 }
+
+fn validate_openpets_manifest(raw: &Value, root: &Path) -> Result<String, String> {
+    let pet: OpenPetsManifestRef =
+        serde_json::from_value(raw.clone()).map_err(|e| format!("Invalid pet.json: {e}"))?;
+    if !valid_id(&pet.id) {
+        return Err(
+            "Invalid pet.json: id must be 1-64 lowercase letters, numbers, or hyphens".into(),
+        );
+    }
+    if pet.display_name.trim().is_empty() {
+        return Err("Invalid pet.json: displayName is required".into());
+    }
+    let _ = &pet.description;
+    let asset = safe_relative_path(&pet.spritesheet_path).ok_or_else(|| {
+        "Invalid pet.json: spritesheetPath must be a safe relative path".to_string()
+    })?;
+    if extension(&asset).as_deref() != Some("webp") || !root.join(&asset).is_file() {
+        return Err("Invalid pet.json: referenced WebP spritesheet does not exist".into());
+    }
+    let (width, height) = image::image_dimensions(root.join(asset))
+        .map_err(|error| format!("Invalid OpenPets spritesheet: {error}"))?;
+    if width % 8 != 0 || height % 9 != 0 {
+        return Err(
+            "Invalid OpenPets spritesheet: dimensions must be divisible into an 8x9 atlas".into(),
+        );
+    }
+    Ok(pet.id)
+}
+
+fn openpets_frame_counts(raw: &Value, root: &Path) -> Result<Vec<u8>, String> {
+    let pet: OpenPetsManifestRef =
+        serde_json::from_value(raw.clone()).map_err(|e| format!("Invalid pet.json: {e}"))?;
+    let asset = safe_relative_path(&pet.spritesheet_path)
+        .ok_or_else(|| "Invalid pet.json spritesheetPath".to_string())?;
+    let image = image::open(root.join(asset))
+        .map_err(|error| format!("Invalid OpenPets spritesheet: {error}"))?
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    let frame_width = width / 8;
+    let frame_height = height / 9;
+    Ok((0..9)
+        .map(|row| {
+            for column in (0..8).rev() {
+                let visible = (row * frame_height..(row + 1) * frame_height).any(|y| {
+                    (column * frame_width..(column + 1) * frame_width)
+                        .any(|x| image.get_pixel(x, y).0[3] != 0)
+                });
+                if visible {
+                    return (column + 1) as u8;
+                }
+            }
+            1
+        })
+        .collect())
+}
+
+fn read_package(
+    root: &Path,
+) -> Result<
+    (
+        String,
+        Option<Value>,
+        Option<Value>,
+        Option<Value>,
+        Option<Vec<u8>>,
+    ),
+    String,
+> {
+    let pet_path = root.join("pet.json");
+    if pet_path.is_file() {
+        let bytes = fs::read(&pet_path).map_err(|e| format!("Cannot read pet.json: {e}"))?;
+        let pet: Value =
+            serde_json::from_slice(&bytes).map_err(|e| format!("Invalid pet.json JSON: {e}"))?;
+        let id = validate_openpets_manifest(&pet, root)?;
+        let frame_counts = openpets_frame_counts(&pet, root)?;
+        let sidecar_path = root.join("deskling.json");
+        let sidecar = if sidecar_path.is_file() {
+            let value: Value =
+                serde_json::from_slice(&fs::read(sidecar_path).map_err(|e| e.to_string())?)
+                    .map_err(|e| format!("Invalid deskling.json JSON: {e}"))?;
+            if !value.is_object() || value.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
+                return Err("Invalid deskling.json: sidecar schemaVersion must be 1".into());
+            }
+            Some(value)
+        } else {
+            None
+        };
+        return Ok((id, None, Some(pet), sidecar, Some(frame_counts)));
+    }
+    let (id, manifest) = read_manifest(root)?;
+    Ok((id, Some(manifest), None, None, None))
+}
 fn unique_path(pets: &Path, label: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -411,7 +520,7 @@ pub fn import_pet_zip(
     fs::create_dir(&staging).map_err(|e| format!("Cannot create staging directory: {e}"))?;
     let result = (|| {
         extract_zip(zip_path, &staging)?;
-        let (id, manifest) = read_manifest(&staging)?;
+        let (id, manifest, pet_manifest, extension, frame_counts) = read_package(&staging)?;
         if BUNDLED_IDS.contains(&id.as_str()) {
             return Err(format!(
                 "{id} is bundled with Deskling and cannot be replaced"
@@ -440,6 +549,9 @@ pub fn import_pet_zip(
             id,
             base_dir: destination.to_string_lossy().into_owned(),
             manifest,
+            pet_manifest,
+            extension,
+            frame_counts,
         })
     })();
     if staging.exists() {
@@ -463,12 +575,17 @@ pub fn list_installed_pets(app: &AppHandle) -> Result<Vec<InstalledPet>, String>
         {
             continue;
         }
-        if let Ok((id, manifest)) = read_manifest(&entry.path()) {
+        if let Ok((id, manifest, pet_manifest, extension, frame_counts)) =
+            read_package(&entry.path())
+        {
             if id == entry.file_name().to_string_lossy() && !BUNDLED_IDS.contains(&id.as_str()) {
                 result.push(InstalledPet {
                     id,
                     base_dir: entry.path().to_string_lossy().into_owned(),
                     manifest,
+                    pet_manifest,
+                    extension,
+                    frame_counts,
                 });
             }
         }
@@ -516,6 +633,7 @@ mod tests {
             assert!(!valid_id(id), "accepted {id}");
         }
         assert!(allowed_file(Path::new("spritesheet.webp")));
+        assert!(allowed_file(Path::new("pet.json")));
         assert!(allowed_file(Path::new("sounds/hello.mp3")));
         assert!(!allowed_file(Path::new("script.js")));
         assert!(!allowed_file(Path::new("image.png")));
@@ -539,6 +657,8 @@ mod tests {
     #[test]
     fn only_root_manifest_is_an_allowed_package_file() {
         assert!(allowed_file(Path::new("deskling.json")));
+        assert!(allowed_file(Path::new("pet.json")));
         assert!(!allowed_file(Path::new("yuexinmiao/deskling.json")));
+        assert!(!allowed_file(Path::new("yuexinmiao/pet.json")));
     }
 }

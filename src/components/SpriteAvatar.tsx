@@ -41,6 +41,8 @@ export function SpriteAvatar({
   const completedRef = useRef(false);
   const resolvedAnimation = resolveAnimation(animation, pkg.manifest.animations);
   const definition = pkg.manifest.animations[resolvedAnimation];
+  const animationRow = definition.facingRows?.[facing] ?? definition.row;
+  const animationFrames = definition.facingFrames?.[facing] ?? definition.frames;
   const { frameWidth, frameHeight } = pkg.manifest.renderer;
   const displayWidth = frameWidth * scale;
   const displayHeight = frameHeight * scale;
@@ -54,11 +56,11 @@ export function SpriteAvatar({
     const tick = (now: number) => {
       const elapsedFrames = Math.floor(((now - startedAt) / 1000) * definition.fps);
       const nextFrame = definition.loop
-        ? elapsedFrames % definition.frames
-        : Math.min(elapsedFrames, definition.frames - 1);
+        ? elapsedFrames % animationFrames
+        : Math.min(elapsedFrames, animationFrames - 1);
       setFrame((current) => (current === nextFrame ? current : nextFrame));
 
-      if (!definition.loop && elapsedFrames >= definition.frames && !completedRef.current) {
+      if (!definition.loop && elapsedFrames >= animationFrames && !completedRef.current) {
         completedRef.current = true;
         onAnimationComplete();
         return;
@@ -68,7 +70,7 @@ export function SpriteAvatar({
 
     animationFrame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animationFrame);
-  }, [definition, onAnimationComplete, resolvedAnimation]);
+  }, [animationFrames, definition, onAnimationComplete, resolvedAnimation]);
 
   const pointFromEvent = (event: ReactPointerEvent<HTMLDivElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -84,10 +86,10 @@ export function SpriteAvatar({
       height: displayHeight,
       backgroundImage: `url(${pkg.assetUrl})`,
       backgroundSize: `${pkg.imageWidth * scale}px ${pkg.imageHeight * scale}px`,
-      backgroundPosition: `${-frame * displayWidth}px ${-definition.row * displayHeight}px`,
-      transform: facing === "left" ? "scaleX(-1)" : undefined,
+      backgroundPosition: `${-frame * displayWidth}px ${-animationRow * displayHeight}px`,
+      transform: definition.facingRows ? undefined : facing === "left" ? "scaleX(-1)" : undefined,
     }),
-    [definition.row, displayHeight, displayWidth, facing, frame, pkg, scale],
+    [animationRow, definition.facingRows, displayHeight, displayWidth, facing, frame, pkg, scale],
   );
 
   const speechAnchor = pkg.manifest.anchors.speechBubble;

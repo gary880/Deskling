@@ -540,10 +540,11 @@ export function App() {
             <details className="import-guide">
               <summary>ZIP 格式說明</summary>
               <div className="import-guide__content">
-                <p><code>deskling.json</code> 與 <code>spritesheet.webp</code> 必須直接位於 ZIP 最外層。</p>
+                <p><code>pet.json</code> 與 <code>spritesheet.webp</code> 必須直接位於 ZIP 最外層；<code>deskling.json</code> 是選用增強 sidecar。</p>
                 <pre>{`my-pet.zip
-├── deskling.json
+├── pet.json
 ├── spritesheet.webp
+├── deskling.json (選用)
 └── sounds/ (選用)`}</pre>
                 <p>ZIP 上限 25 MB，解壓後 100 MB／100 個項目。音效支援 WAV、MP3、OGG。</p>
                 <p>相同 ID 會先詢問是否替換；內建角色不能覆寫或移除。</p>

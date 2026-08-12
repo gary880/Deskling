@@ -1,5 +1,13 @@
 import type { PetManifest, Rect } from "./avatar";
 import { sanitizePersonalityOverride } from "./personality";
+import {
+  OPENPETS_ANIMATIONS,
+  OPENPETS_COLUMNS,
+  OPENPETS_PROFILE,
+  OPENPETS_ROWS,
+  type DesklingExtension,
+  type OpenPetsManifest,
+} from "./openPets";
 
 const CORE_ANIMATIONS = ["idle", "walk", "sleep", "thinking", "talking", "happy"];
 const ANCHORS = ["feet", "head", "speechBubble"] as const;
@@ -14,6 +22,97 @@ export class InvalidPetPackageError extends Error {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export interface ValidationLayer {
+  valid: boolean;
+  issues: string[];
+  message?: string;
+}
+
+export interface PackageValidationResult {
+  openPets: ValidationLayer;
+  deskling: ValidationLayer;
+}
+
+function safeRelativePath(value: string): boolean {
+  return Boolean(value) && !value.includes("\\") && !value.includes(":") &&
+    !value.startsWith("/") && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+}
+
+export function validateOpenPetsManifest(
+  value: unknown,
+  image?: { width: number; height: number },
+): OpenPetsManifest {
+  const issues: string[] = [];
+  if (!isObject(value)) throw new InvalidPetPackageError(["pet.json must be an object"]);
+  if (typeof value.id !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(value.id)) {
+    issues.push("pet.json id must use lowercase letters, numbers, or hyphens");
+  }
+  if (typeof value.displayName !== "string" || !value.displayName.trim()) {
+    issues.push("pet.json displayName is required");
+  }
+  if (typeof value.description !== "string") issues.push("pet.json description must be a string");
+  if (typeof value.spritesheetPath !== "string" ||
+      !safeRelativePath(value.spritesheetPath) || !value.spritesheetPath.endsWith(".webp")) {
+    issues.push("pet.json spritesheetPath must be a safe relative WebP path");
+  }
+  if (image && (image.width % OPENPETS_COLUMNS !== 0 || image.height % OPENPETS_ROWS !== 0)) {
+    issues.push("OpenPets spritesheet must be divisible into an 8×9 atlas");
+  }
+  if (issues.length) throw new InvalidPetPackageError(issues);
+  return value as unknown as OpenPetsManifest;
+}
+
+export function validateDesklingExtension(value: unknown): DesklingExtension {
+  const issues: string[] = [];
+  if (!isObject(value)) throw new InvalidPetPackageError(["deskling.json must be an object"]);
+  if (value.schemaVersion !== 1) issues.push("deskling.json schemaVersion must be 1");
+  if (value.extends !== undefined) {
+    if (!isObject(value.extends) || value.extends.format !== "openpets" ||
+        value.extends.profile !== OPENPETS_PROFILE) {
+      issues.push(`deskling.json extends must target openpets/${OPENPETS_PROFILE}`);
+    }
+  }
+  if (value.animationMap !== undefined) {
+    if (!isObject(value.animationMap)) issues.push("deskling.json animationMap must be an object");
+    else for (const [semantic, target] of Object.entries(value.animationMap)) {
+      const names = typeof target === "string" ? [target] : isObject(target) ? [target.right, target.left] : [];
+      if (!semantic || names.length === 0 || names.some((name) =>
+        typeof name !== "string" || !(OPENPETS_ANIMATIONS as readonly string[]).includes(name))) {
+        issues.push(`animationMap.${semantic} must reference OpenPets animation names`);
+      }
+    }
+  }
+  if (issues.length) throw new InvalidPetPackageError(issues);
+  return value as unknown as DesklingExtension;
+}
+
+export function validateOpenPetsPackage(
+  petValue: unknown,
+  extensionValue: unknown | undefined,
+  image?: { width: number; height: number },
+): PackageValidationResult {
+  const openPetsIssues: string[] = [];
+  const desklingIssues: string[] = [];
+  try { validateOpenPetsManifest(petValue, image); } catch (error) {
+    openPetsIssues.push(...(error instanceof InvalidPetPackageError ? error.issues : [String(error)]));
+  }
+  if (extensionValue !== undefined) {
+    try { validateDesklingExtension(extensionValue); } catch (error) {
+      desklingIssues.push(...(error instanceof InvalidPetPackageError ? error.issues : [String(error)]));
+    }
+  }
+  return {
+    openPets: { valid: openPetsIssues.length === 0, issues: openPetsIssues },
+    deskling: {
+      valid: desklingIssues.length === 0,
+      issues: desklingIssues,
+      message: extensionValue === undefined
+        ? "OpenPets compatible. Deskling will use default anchors, hitboxes and animation mappings."
+        : undefined,
+    },
+  };
 }
 
 function positiveInteger(value: unknown): value is number {
