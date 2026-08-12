@@ -4,6 +4,7 @@ import { SpriteAvatar } from "./components/SpriteAvatar";
 import { PersonalitySettings } from "./components/PersonalitySettings";
 import { ConversationHistorySettings } from "./components/ConversationHistorySettings";
 import { PetMemorySettings } from "./components/PetMemorySettings";
+import { PetCreator } from "./components/PetCreator";
 import type { ConversationEvent } from "./agent/conversation";
 import {
   DEFAULT_AUTONOMY_SETTINGS,
@@ -72,6 +73,7 @@ const AGENT_ACTIVITIES: readonly AgentActivity[] = ["thinking", "talking", "succ
 export function App() {
   const { packages, error: catalogError, reload: reloadCatalog } = usePetCatalog();
   const [packageStatus, setPackageStatus] = useState<{ kind: "busy" | "success" | "error"; message: string } | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<"runtime" | "creator">("runtime");
   const [selectedId, setSelectedId] = useState(
     () => localStorage.getItem(DESKTOP_STORAGE.petId) ?? "mochi",
   );
@@ -414,6 +416,8 @@ export function App() {
     try {
       const installed = await importPetZip(zipPath);
       setPackageStatus({ kind: "success", message: `${installed.id} 安裝完成` });
+      setSelectedId(installed.id);
+      setWorkspaceMode("creator");
       reloadCatalog();
     } catch (error) {
       const message = String(error);
@@ -422,6 +426,8 @@ export function App() {
         try {
           const installed = await importPetZip(zipPath, true);
           setPackageStatus({ kind: "success", message: `${installed.id} 已替換` });
+          setSelectedId(installed.id);
+          setWorkspaceMode("creator");
           reloadCatalog();
           return;
         } catch (replaceError) {
@@ -523,6 +529,10 @@ export function App() {
           <p>Pet Package Lab</p>
         </div>
         <div className="topbar-actions">
+          <div className="workspace-switch" role="group" aria-label="Workspace mode">
+            <button className={workspaceMode === "runtime" ? "active" : ""} onClick={() => setWorkspaceMode("runtime")}>Runtime</button>
+            <button className={workspaceMode === "creator" ? "active" : ""} onClick={() => setWorkspaceMode("creator")}>Creator</button>
+          </div>
           {isDesktopRuntime() && (
             <button className="show-pet-button" onClick={() => void showPetWindow()}>顯示寵物</button>
           )}
@@ -530,7 +540,9 @@ export function App() {
         </div>
       </header>
 
-      <section className="workspace">
+      {workspaceMode === "creator" ? (
+        <PetCreator pkg={selectedPackage} onImport={handleImport} importing={packageStatus?.kind === "busy"} />
+      ) : <section className="workspace">
         <aside className="control-panel">
           <div className="panel-section">
             <p className="eyebrow">YOUR DESKLINGS</p>
@@ -847,7 +859,7 @@ export function App() {
             <div className="validation-chip">✓ Manifest valid</div>
           </footer>
         </section>
-      </section>
+      </section>}
     </main>
   );
 }

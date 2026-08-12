@@ -68,6 +68,8 @@ export interface PetPackage {
   assetUrl: string;
   imageWidth: number;
   imageHeight: number;
+  desklingExtension?: import("./openPets").DesklingExtension;
+  atlasFrameCounts?: number[];
 }
 
 export interface AvatarRenderer {

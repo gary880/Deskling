@@ -84,6 +84,25 @@ export function validateDesklingExtension(value: unknown): DesklingExtension {
       }
     }
   }
+  if (value.playback !== undefined) {
+    if (!isObject(value.playback)) issues.push("deskling.json playback must be an object");
+    else for (const [name, setting] of Object.entries(value.playback)) {
+      if (!isObject(setting)) { issues.push(`playback.${name} must be an object`); continue; }
+      if (setting.frames !== undefined && (!positiveInteger(setting.frames) || setting.frames > 8)) {
+        issues.push(`playback.${name}.frames must be between 1 and 8`);
+      }
+      if (setting.fps !== undefined && (typeof setting.fps !== "number" || setting.fps <= 0 || setting.fps > 60)) {
+        issues.push(`playback.${name}.fps must be between 0 and 60`);
+      }
+      if (setting.loop !== undefined && typeof setting.loop !== "boolean") {
+        issues.push(`playback.${name}.loop must be boolean`);
+      }
+    }
+  }
+  if (value.anchors !== undefined && !isObject(value.anchors)) issues.push("deskling.json anchors must be an object");
+  if (value.hitboxes !== undefined && !isObject(value.hitboxes)) issues.push("deskling.json hitboxes must be an object");
+  if (value.personality !== undefined && !isObject(value.personality)) issues.push("deskling.json personality must be an object");
+  if (value.sounds !== undefined && !isObject(value.sounds)) issues.push("deskling.json sounds must be an object");
   if (issues.length) throw new InvalidPetPackageError(issues);
   return value as unknown as DesklingExtension;
 }

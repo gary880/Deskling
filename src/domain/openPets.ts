@@ -99,7 +99,11 @@ export function adaptOpenPetsManifest(
   for (const [semantic, target] of Object.entries(mappings)) {
     const primary = typeof target === "string" ? target : target.right;
     const primaryRow = OPENPETS_ANIMATIONS.indexOf(primary);
-    const playback = { ...DEFAULT_PLAYBACK[primary], ...extension?.playback?.[semantic] };
+    const playback = {
+      ...DEFAULT_PLAYBACK[primary],
+      ...extension?.playback?.[primary],
+      ...extension?.playback?.[semantic],
+    };
     const detectedFrames = image.frameCounts?.[primaryRow] ?? OPENPETS_COLUMNS;
     animations[semantic] = {
       row: primaryRow,
@@ -111,8 +115,10 @@ export function adaptOpenPetsManifest(
         left: OPENPETS_ANIMATIONS.indexOf(target.left),
       },
       facingFrames: typeof target === "string" || playback.frames !== undefined ? undefined : {
-        right: image.frameCounts?.[OPENPETS_ANIMATIONS.indexOf(target.right)] ?? OPENPETS_COLUMNS,
-        left: image.frameCounts?.[OPENPETS_ANIMATIONS.indexOf(target.left)] ?? OPENPETS_COLUMNS,
+        right: extension?.playback?.[target.right]?.frames ??
+          image.frameCounts?.[OPENPETS_ANIMATIONS.indexOf(target.right)] ?? OPENPETS_COLUMNS,
+        left: extension?.playback?.[target.left]?.frames ??
+          image.frameCounts?.[OPENPETS_ANIMATIONS.indexOf(target.left)] ?? OPENPETS_COLUMNS,
       },
     };
   }

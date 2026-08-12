@@ -58,6 +58,13 @@ describe("validateManifest", () => {
     expect(result.deskling.valid).toBe(false);
   });
 
+  it("rejects invalid Deskling playback settings", () => {
+    expect(() => validateDesklingExtension({
+      schemaVersion: 1,
+      playback: { idle: { frames: 9, fps: 0, loop: "yes" } },
+    })).toThrow(/playback.idle.frames/);
+  });
+
   it("rejects animation frames outside the sheet", () => {
     const invalid = structuredClone(mochi);
     invalid.animations.idle.frames = 9;
