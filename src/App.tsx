@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SpriteAvatar } from "./components/SpriteAvatar";
-import type { Facing, HitRegion, PetPackage, Point } from "./domain/avatar";
+import type { Facing, HitRegion, Point } from "./domain/avatar";
 import { resolveAnimation } from "./domain/fallback";
-import { loadPetPackage } from "./domain/packageLoader";
-import { findDuplicateIds } from "./domain/validation";
+import {
+  DESKTOP_EVENTS,
+  DESKTOP_STORAGE,
+  emitToPet,
+  isDesktopRuntime,
+  listenDesktop,
+  readBooleanSetting,
+  showPetWindow,
+  writeBooleanSetting,
+} from "./desktop/bridge";
+import { usePetCatalog } from "./hooks/usePetCatalog";
 import { MotionEngine } from "./motion/MotionEngine";
 import { SpriteRenderer } from "./renderers/SpriteRenderer";
 
@@ -27,14 +36,21 @@ const SPEECH: Record<string, string> = {
 };
 
 export function App() {
-  const [packages, setPackages] = useState<PetPackage[]>([]);
-  const [selectedId, setSelectedId] = useState("mochi");
+  const { packages, error: catalogError } = usePetCatalog();
+  const [selectedId, setSelectedId] = useState(
+    () => localStorage.getItem(DESKTOP_STORAGE.petId) ?? "mochi",
+  );
   const [animation, setAnimation] = useState("idle");
   const [facing, setFacing] = useState<Facing>("right");
   const [debug, setDebug] = useState(false);
   const [speech, setSpeech] = useState<string | null>("點一下舞台，我會走過去。");
   const [positionX, setPositionX] = useState(420);
-  const [loadingError, setLoadingError] = useState<string | null>(null);
+  const [clickThrough, setClickThrough] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.clickThrough, false),
+  );
+  const [alwaysOnTop, setAlwaysOnTop] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, true),
+  );
   const stageRef = useRef<HTMLDivElement>(null);
   const dragPointerRef = useRef<number | null>(null);
   const motionRef = useRef(new MotionEngine({ x: 420, y: 0 }));
@@ -57,28 +73,33 @@ export function App() {
   const handleAnimationComplete = useCallback(() => setAnimation("idle"), []);
 
   useEffect(() => {
-    let active = true;
-    async function loadCatalog() {
-      try {
-        const response = await fetch("/pets/index.json");
-        if (!response.ok) throw new Error("找不到 pet catalog");
-        const manifestUrls = (await response.json()) as string[];
-        const loaded = await Promise.all(manifestUrls.map(loadPetPackage));
-        const duplicates = findDuplicateIds(loaded.map((pkg) => pkg.manifest));
-        if (duplicates.length) throw new Error(`重複的 pet id：${duplicates.join(", ")}`);
-        if (active) setPackages(loaded);
-      } catch (error) {
-        if (active) setLoadingError(error instanceof Error ? error.message : "無法載入 Pet Package");
-      }
-    }
-    void loadCatalog();
-    return () => {
-      active = false;
-    };
+    const unlisteners: (() => void)[] = [];
+    void Promise.all([
+      listenDesktop<string>(DESKTOP_EVENTS.selectPet, (petId) => setSelectedId(petId)),
+      listenDesktop<boolean>(DESKTOP_EVENTS.clickThrough, (enabled) => setClickThrough(enabled)),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleClickThrough, () =>
+        setClickThrough((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.clickThrough, next);
+          return next;
+        }),
+      ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.alwaysOnTop, (enabled) => setAlwaysOnTop(enabled)),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleAlwaysOnTop, () =>
+        setAlwaysOnTop((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, next);
+          return next;
+        }),
+      ),
+    ]).then((subscriptions) => unlisteners.push(...subscriptions));
+    return () => unlisteners.forEach((unlisten) => unlisten());
   }, []);
 
   useEffect(() => {
     if (!selectedPackage) return;
+    localStorage.setItem(DESKTOP_STORAGE.petId, selectedPackage.manifest.id);
+    void emitToPet(DESKTOP_EVENTS.selectPet, selectedPackage.manifest.id);
     const renderer = new SpriteRenderer();
     rendererRef.current = renderer;
     void renderer.load(selectedPackage).then(() => {
@@ -127,11 +148,29 @@ export function App() {
   const selectBehavior = (behavior: (typeof BEHAVIORS)[number]) => {
     setAnimation(behavior);
     showSpeech(SPEECH[behavior] ?? BEHAVIOR_LABELS[behavior]);
+    void emitToPet(DESKTOP_EVENTS.playBehavior, behavior);
     if (behavior === "walk") {
       const stageWidth = stageRef.current?.clientWidth ?? 840;
       const destination = positionX > stageWidth / 2 ? 110 : stageWidth - 110;
       motionRef.current.moveTo({ x: destination, y: 0 });
     }
+  };
+
+  const updateDebug = (enabled: boolean) => {
+    setDebug(enabled);
+    void emitToPet(DESKTOP_EVENTS.debug, enabled);
+  };
+
+  const updateClickThrough = (enabled: boolean) => {
+    setClickThrough(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.clickThrough, enabled);
+    void emitToPet(DESKTOP_EVENTS.clickThrough, enabled);
+  };
+
+  const updateAlwaysOnTop = (enabled: boolean) => {
+    setAlwaysOnTop(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, enabled);
+    void emitToPet(DESKTOP_EVENTS.alwaysOnTop, enabled);
   };
 
   const stagePoint = (clientX: number): number => {
@@ -181,11 +220,11 @@ export function App() {
     showSpeech("放好囉。", 1300);
   };
 
-  if (loadingError) {
+  if (catalogError) {
     return (
       <main className="loading-state loading-state--error">
         <span>Pet Package 載入失敗</span>
-        <strong>{loadingError}</strong>
+        <strong>{catalogError}</strong>
       </main>
     );
   }
@@ -207,7 +246,12 @@ export function App() {
           <h1>Deskling</h1>
           <p>Pet Package Lab</p>
         </div>
-        <span className="mvp-badge">MVP · LOCAL</span>
+        <div className="topbar-actions">
+          {isDesktopRuntime() && (
+            <button className="show-pet-button" onClick={() => void showPetWindow()}>顯示寵物</button>
+          )}
+          <span className="mvp-badge">{isDesktopRuntime() ? "DESKTOP · CONNECTED" : "MVP · WEB"}</span>
+        </div>
       </header>
 
       <section className="workspace">
@@ -260,7 +304,33 @@ export function App() {
                 <strong>顯示結構</strong>
                 <small>Anchors & hitboxes</small>
               </span>
-              <input type="checkbox" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
+              <input type="checkbox" checked={debug} onChange={(event) => updateDebug(event.target.checked)} />
+              <i aria-hidden="true" />
+            </label>
+            <label className="debug-toggle">
+              <span>
+                <strong>穿透點擊</strong>
+                <small>Click through overlay</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={clickThrough}
+                disabled={!isDesktopRuntime()}
+                onChange={(event) => updateClickThrough(event.target.checked)}
+              />
+              <i aria-hidden="true" />
+            </label>
+            <label className="debug-toggle">
+              <span>
+                <strong>保持置頂</strong>
+                <small>Always on top</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={alwaysOnTop}
+                disabled={!isDesktopRuntime()}
+                onChange={(event) => updateAlwaysOnTop(event.target.checked)}
+              />
               <i aria-hidden="true" />
             </label>
           </div>
