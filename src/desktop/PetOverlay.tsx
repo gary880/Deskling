@@ -92,6 +92,7 @@ interface ActivePetGesture {
 }
 
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
+const PET_DOUBLE_CLICK_MS = 400;
 
 export function PetOverlay() {
   const { packages, error } = usePetCatalog();
@@ -173,6 +174,7 @@ export function PetOverlay() {
   const proactiveIgnoreTimerRef = useRef<number | null>(null);
   const proactiveActiveRef = useRef(false);
   const testProactiveRef = useRef<() => void>(() => undefined);
+  const lastPetTapAtRef = useRef(0);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -864,10 +866,28 @@ export function PetOverlay() {
     lastWindowSnapshotRef.current = null;
     lastWindowFeetXRef.current = null;
 
-    if (!isDesktopRuntime()) {
+    const openConversationOnDoubleClick = () => {
+      const now = Date.now();
+      const doubleClick = now - lastPetTapAtRef.current <= PET_DOUBLE_CLICK_MS;
+      lastPetTapAtRef.current = doubleClick ? 0 : now;
+      if (!doubleClick) return false;
+      if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
+      reactionTimerRef.current = null;
+      dispatchBehavior("reactionCompleted");
       setConversationOpen(true);
       setSpeech(null);
+      return true;
+    };
+    const reactToSingleClick = () => {
+      if (proactiveMessage) return;
+      startReaction("happy", 2_400);
+      showSpeech(region === "head" ? SPEECH.head : SPEECH.happy, 1_800);
+    };
+
+    if (!isDesktopRuntime()) {
+      const opened = openConversationOnDoubleClick();
       dispatchBehavior("dragEnded");
+      if (!opened) reactToSingleClick();
       return;
     }
 
@@ -882,8 +902,10 @@ export function PetOverlay() {
       await getCurrentWindow().startDragging();
     } finally {
       if (activeGestureRef.current === gesture) {
+        let opened = false;
         if (!gesture.moved) {
-          if (proactiveMessage) {
+          opened = openConversationOnDoubleClick();
+          if (opened && proactiveMessage) {
             proactiveHistoryRef.current = recordProactiveOpened(proactiveHistoryRef.current);
             localStorage.setItem(`deskling.proactiveHistory.${selectedPackage.manifest.id}`, JSON.stringify(proactiveHistoryRef.current));
             if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
@@ -892,11 +914,10 @@ export function PetOverlay() {
             setProactiveMessage(null);
             proactiveActiveRef.current = false;
           }
-          setConversationOpen(true);
-          setSpeech(null);
         }
         activeGestureRef.current = null;
         dispatchBehavior("dragEnded");
+        if (!gesture.moved && !opened) reactToSingleClick();
         lastWindowSnapshotRef.current = null;
         lastWindowFeetXRef.current = null;
       }
