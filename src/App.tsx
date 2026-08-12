@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SpriteAvatar } from "./components/SpriteAvatar";
 import { PersonalitySettings } from "./components/PersonalitySettings";
+import { ConversationHistorySettings } from "./components/ConversationHistorySettings";
 import type { ConversationEvent } from "./agent/conversation";
 import {
   DEFAULT_AUTONOMY_SETTINGS,
@@ -566,6 +567,10 @@ export function App() {
 
           <div className="panel-section">
             <PersonalitySettings manifest={manifest} preview={personalityPreview} previewBusy={personalityPreviewBusy} onPreview={previewPersonality} />
+          </div>
+
+          <div className="panel-section">
+            <ConversationHistorySettings petId={manifest.id} petName={manifest.name} />
           </div>
 
           <div className="panel-section">

@@ -43,6 +43,9 @@ cd src-tauri && cargo check
 - 以 package `feet` anchor 對齊視窗上緣或 Desktop Floor
 - `dragging > reacting > roaming > sleeping > idle` 行為優先序與獨立 surface state
 - 自主 idle variation、視窗／桌面表面散步與可設定的 sleep scheduling
+- 可自訂 Pet personality、App Data override 與安全 prompt composition
+- read-only Codex Conversation Card、雙擊開啟與 opt-in 主動短互動
+- 每隻 Pet 獨立的本機 conversation history、保存期限與筆數限制
 
 Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `deskling.json` 與 `spritesheet.webp` 的資料夾，再將 manifest URL 加進 catalog 即可。
 

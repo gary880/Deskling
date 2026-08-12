@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
-import type { ConversationEvent } from "../agent/conversation";
+import type { ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings } from "../agent/conversation";
 import type { PetPersonalityOverride } from "../domain/avatar";
 
 export const DESKTOP_EVENTS = {
@@ -22,6 +22,9 @@ export const DESKTOP_EVENTS = {
   autonomySettings: "deskling-autonomy-settings",
   proactiveSettings: "deskling-proactive-settings",
   testProactive: "deskling-test-proactive",
+  historySettingsChanged: "deskling-history-settings-changed",
+  conversationHistoryChanged: "deskling-conversation-history-changed",
+  newConversation: "deskling-new-conversation",
   petCatalogChanged: "deskling-pet-catalog-changed",
   agentActivity: "deskling-agent-activity",
   conversation: "deskling-conversation-event",
@@ -41,6 +44,7 @@ export const DESKTOP_STORAGE = {
   sleepAfterMinutes: "deskling.sleepAfterMinutes",
   wakeOnWindowChange: "deskling.wakeOnWindowChange",
   proactiveSettings: "deskling.proactiveSettings",
+  conversationHistorySettings: "deskling.conversationHistorySettings",
 } as const;
 
 export function isDesktopRuntime(): boolean {
@@ -130,6 +134,27 @@ export async function resetPetConversation(): Promise<void> {
   if (!isDesktopRuntime()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("reset_pet_conversation");
+}
+
+export async function loadConversationHistory(petId: string, settings: ConversationHistorySettings): Promise<ConversationHistoryEntry[]> {
+  if (!isDesktopRuntime() || !settings.saveHistory) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ConversationHistoryEntry[]>("load_conversation_history", { petId, retentionDays: settings.retentionDays, maxEntries: settings.maxEntries });
+}
+
+export async function appendConversationHistory(petId: string, entry: ConversationHistoryEntry, settings: ConversationHistorySettings): Promise<ConversationHistoryEntry[]> {
+  if (!isDesktopRuntime() || !settings.saveHistory) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  const entries = await invoke<ConversationHistoryEntry[]>("append_conversation_history", { petId, entry, retentionDays: settings.retentionDays, maxEntries: settings.maxEntries });
+  await emitTo("control", DESKTOP_EVENTS.conversationHistoryChanged, petId);
+  return entries;
+}
+
+export async function clearConversationHistory(petId: string): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("clear_conversation_history", { petId });
+  await emitTo("control", DESKTOP_EVENTS.conversationHistoryChanged, petId);
 }
 
 export type { ConversationEvent };

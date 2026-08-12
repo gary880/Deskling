@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod agent_runtime;
+mod conversation_history;
 mod desktop_world;
 mod personality;
 mod pet_packages;
@@ -140,6 +141,32 @@ fn reset_pet_conversation(
     state: tauri::State<agent_runtime::AgentRuntimeState>,
 ) -> Result<(), String> {
     agent_runtime::reset(&state)
+}
+
+#[tauri::command]
+fn load_conversation_history(
+    app: tauri::AppHandle,
+    pet_id: String,
+    retention_days: u32,
+    max_entries: usize,
+) -> Result<Vec<conversation_history::ConversationEntry>, String> {
+    conversation_history::load(&app, &pet_id, retention_days, max_entries)
+}
+
+#[tauri::command]
+fn append_conversation_history(
+    app: tauri::AppHandle,
+    pet_id: String,
+    entry: conversation_history::ConversationEntry,
+    retention_days: u32,
+    max_entries: usize,
+) -> Result<Vec<conversation_history::ConversationEntry>, String> {
+    conversation_history::append(&app, &pet_id, entry, retention_days, max_entries)
+}
+
+#[tauri::command]
+fn clear_conversation_history(app: tauri::AppHandle, pet_id: String) -> Result<(), String> {
+    conversation_history::clear(&app, &pet_id)
 }
 
 #[tauri::command]
@@ -384,6 +411,9 @@ pub fn run() {
             start_pet_conversation,
             stop_pet_conversation,
             reset_pet_conversation,
+            load_conversation_history,
+            append_conversation_history,
+            clear_conversation_history,
             load_pet_personality,
             save_pet_personality,
             reset_pet_personality
