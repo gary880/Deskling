@@ -9,10 +9,11 @@ npm install
 npm run desktop
 ```
 
-這會啟動兩個原生視窗：
+這會啟動三個原生視窗：
 
 - `control`：Pet Package Lab 與角色／behavior／desktop 設定。
 - `pet`：無邊框、透明、置頂的桌面寵物 overlay。
+- `conversation`：預先建立、預設隱藏的對話 sidecar；顯示時位於 Pet 左側或右側，不會 resize 或移動 Pet window。
 
 關閉 Control Window 只會隱藏它；可從 macOS menu bar 的 Deskling icon 重新開啟、切換角色、顯示或隱藏寵物，以及退出程式。
 
@@ -23,7 +24,8 @@ npm run desktop
 ```bash
 npm test
 npm run build
-cd src-tauri && cargo check
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 ## 已完成範圍
@@ -34,7 +36,7 @@ cd src-tauri && cargo check
 - `body`、`head` hitboxes
 - 左右朝向、點擊移動、拖曳與基礎 behavior preview
 - Mochi 與 Bella developer-local packages
-- Tauri v2 macOS shell、Control／Pet 雙視窗與 event sync
+- Tauri v2 macOS shell、Control／Pet／Conversation 三視窗與 event sync
 - 透明、無邊框、always-on-top overlay
 - 原生視窗拖曳、螢幕 work area 邊界限制與位置保存
 - Click-through mode 與 menu bar 控制
@@ -44,12 +46,42 @@ cd src-tauri && cargo check
 - `dragging > reacting > roaming > sleeping > idle` 行為優先序與獨立 surface state
 - 自主 idle variation、視窗／桌面表面散步與可設定的 sleep scheduling
 - 可自訂 Pet personality、App Data override 與安全 prompt composition
-- read-only Codex Conversation Card、雙擊開啟與 opt-in 主動短互動
+- read-only Codex Conversation sidecar、雙擊開啟、左右換邊、中文 IME 安全輸入與 opt-in 主動短互動
 - 每隻 Pet 獨立的本機 conversation history、保存期限與筆數限制
+- 每隻 Pet 獨立、由使用者明確確認的本機 memory，以及敏感資料防護與 prompt context budget
+- 安全的 Pet ZIP import、manifest／asset validation、衝突確認與原子安裝
 
 Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `deskling.json` 與 `spritesheet.webp` 的資料夾，再將 manifest URL 加進 catalog 即可。
 
-目前優先支援 macOS。透明背景使用 Tauri 的 `macOSPrivateApi`，適合直接散佈與公證，但不符合 Mac App Store 的 private API 規則。正式 ZIP import 與其他平台的 window awareness 仍留在後續切片。
+目前優先支援 macOS。透明背景使用 Tauri 的 `macOSPrivateApi`，適合直接散佈與公證，但不符合 Mac App Store 的 private API 規則。其他平台的 window awareness 仍留在後續切片。
+
+## Conversation、History 與 Memory
+
+雙擊 Pet 開啟獨立的 Conversation sidecar。sidecar 可切換至 Pet 左側或右側；拖曳 Pet 時會跟隨移動，關閉 sidecar 不會改變 Pet 的位置。一般 Enter 送出、Shift+Enter 換行；中文／日文等 IME 組字與選字期間的 Enter 不會送出訊息。
+
+Conversation runtime 透過已安裝並登入的 Codex CLI 執行，使用 read-only sandbox 且禁止工具與權限請求。Conversation history 和 Pet memory 是兩種不同資料：
+
+- History 保存「發生過哪些對話」，可設定保存期限與筆數；不會直接整批加入 prompt。
+- Memory 保存「使用者明確允許 Pet 記住的重要資訊」，可在 Pet Lab 的 `MEMORY` 查看、新增、編輯、刪除或全部清除。
+
+Pet 回覆後的 `＋ 記住資訊` 會以使用者上一句作為草稿；使用者仍需編輯、選擇類別並確認保存。第一版不會自動從對話抽取或自動保存 memory。
+
+直接對話最多挑選 5 項相關 memory，每項最多 300 字、總計最多 1,000 字。Proactive interaction 固定不使用 memory。完整資料流、prompt 順序與隱私限制見 [Conversation & Pet Memory Architecture](./Deskling%20%E2%80%94%20Conversation%20%26%20Pet%20Memory%20Architecture.md)。
+
+### 本機資料
+
+所有 personality、history、memory 與安裝的 Pet Package 都保存在 Tauri App Data，不會寫入目前 workspace。macOS identifier 為 `com.deskling.desktop`，預設位置為：
+
+```text
+~/Library/Application Support/com.deskling.desktop/
+├── agent-workspace/
+├── conversation-history/<pet-id>.json
+├── pet-memory/<pet-id>.json
+├── pet-settings/<pet-id>.json
+└── pets/<pet-id>/
+```
+
+UI 開關與容量偏好使用 WebView `localStorage`，內容資料則由 Rust command 驗證並寫入 App Data。
 
 ### Window-aware mode（macOS）
 
@@ -67,5 +99,18 @@ Behavior 與 surface 是兩組獨立狀態：角色可以在 active window 或 D
 
 - 按住角色的頭部或身體拖曳，即可移動桌面寵物。
 - 短點頭部會播放 `happy` 反應。
+- 雙擊角色會開啟獨立 Conversation sidecar；header 的箭頭可切換左右位置。
 - 從 Control Window 選擇「散步」，寵物會在目前螢幕的可用範圍內水平走動。
 - 開啟 Click-through 後 overlay 不接收滑鼠事件；需從 Control Window 或 menu bar 關閉 Click-through 才能再次拖曳。
+
+### Pet Lab
+
+Control Window 提供：
+
+- 匯入、替換與移除 Pet ZIP
+- Personality override 與安全預覽
+- Conversation history 保存、retention、最大筆數與清除
+- Pet memory 啟用狀態、最大筆數、CRUD、來源與更新時間
+- Behavior、agent activity、autonomy、proactive conversation 與 desktop world 設定
+
+Pet memory 的「停用」只代表不加入對話 context，不會刪除既有內容；只有刪除單項或 `Clear All Memory` 才會移除資料。

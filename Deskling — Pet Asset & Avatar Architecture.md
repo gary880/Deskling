@@ -490,7 +490,7 @@ Desktop Interaction
 
 # User Pet Import
 
-未來使用者可以匯入：
+Desktop runtime 已支援使用者匯入：
 
 ```text
 .zip
@@ -504,6 +504,8 @@ spritesheet.webp
 thumbnail.webp
 ```
 
+目前必要檔案仍只有 `deskling.json` 與 `spritesheet.webp`，而且必須直接位於 ZIP root；`sounds/` 為選用。匯入流程會限制 ZIP／解壓大小與項目數、拒絕路徑穿越與不支援的檔案，並以暫存目錄驗證後原子安裝。
+
 流程：
 
 ```text
@@ -513,20 +515,16 @@ Validate manifest
 ↓
 Validate assets
 ↓
-Preview
-↓
 Install Pet
 ```
 
 Pet 儲存在：
 
 ```text
-~/Library/Application Support/Deskling/pets/
+~/Library/Application Support/com.deskling.desktop/pets/
 ```
 
-MVP 可以先支援 developer-local package。
-
-正式 user import 可以放到 Post-MVP。
+相同 ID 需要使用者明確確認替換；內建 Pet 不可覆寫或移除。Mochi 與 Bella 仍作為 bundled developer-local packages。
 
 ---
 
