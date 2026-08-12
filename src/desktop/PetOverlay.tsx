@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { BehaviorEngine, type BehaviorSignals, type BehaviorState } from "../behavior/BehaviorEngine";
 import { SpriteAvatar } from "../components/SpriteAvatar";
 import type { Facing, HitRegion, Point } from "../domain/avatar";
 import { usePetCatalog } from "../hooks/usePetCatalog";
@@ -14,6 +15,19 @@ import {
   readBooleanSetting,
   writeBooleanSetting,
 } from "./bridge";
+import {
+  desktopFloorFeetPosition,
+  getAccessibilityPermissionStatus,
+  getActiveDesktopWindow,
+  feetAnchorOffset,
+  positionPetWindow,
+  windowSnapshotChanged,
+  windowTopFeetPosition,
+  WINDOW_TRACKING_INTERVAL_MS,
+  type AccessibilityPermissionStatus,
+  type DesktopWindowSnapshot,
+  type FeetAnchorMetrics,
+} from "./desktopWorld";
 import {
   constrainPetWindow,
   horizontalWalkTarget,
@@ -50,10 +64,27 @@ export function PetOverlay() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(() =>
     readBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, true),
   );
+  const [windowAware, setWindowAware] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.windowAware, true),
+  );
+  const [followActiveWindow, setFollowActiveWindow] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.followActiveWindow, true),
+  );
+  const [desktopFloorFallback, setDesktopFloorFallback] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, true),
+  );
+  const [permissionStatus, setPermissionStatus] = useState<AccessibilityPermissionStatus>(
+    "denied",
+  );
+  const [behaviorState, setBehaviorState] = useState<BehaviorState>("idle");
   const rendererRef = useRef(new SpriteRenderer());
   const speechTimerRef = useRef<number | null>(null);
   const activeGestureRef = useRef<ActivePetGesture | null>(null);
   const desktopMotionTokenRef = useRef(0);
+  const behaviorEngineRef = useRef(new BehaviorEngine());
+  const surfaceModeRef = useRef<"manual" | "window" | "floor">("manual");
+  const lastWindowSnapshotRef = useRef<DesktopWindowSnapshot | null>(null);
+  const lastWindowFeetXRef = useRef<number | null>(null);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -61,16 +92,35 @@ export function PetOverlay() {
   );
   const scale = selectedPackage?.manifest.id === "bella" ? 0.92 : 1;
 
+  const updateBehaviorSignal = useCallback(
+    (signal: keyof BehaviorSignals, active: boolean): BehaviorState => {
+      const state = behaviorEngineRef.current.setSignal(signal, active);
+      setBehaviorState(state);
+      if (state === "dragging" || state === "windowFollowing" || state === "idle") {
+        setAnimation("idle");
+      } else if (state === "roaming") {
+        setAnimation("walk");
+      } else if (state === "sleeping") {
+        setAnimation("sleep");
+      }
+      return state;
+    },
+    [],
+  );
+
   const showSpeech = useCallback((message: string, duration = 2200) => {
     if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
     setSpeech(message);
     speechTimerRef.current = window.setTimeout(() => setSpeech(null), duration);
   }, []);
-  const handleAnimationComplete = useCallback(() => setAnimation("idle"), []);
+  const handleAnimationComplete = useCallback(() => {
+    updateBehaviorSignal("reacting", false);
+  }, [updateBehaviorSignal]);
 
   const stopDesktopMotion = useCallback(() => {
     desktopMotionTokenRef.current += 1;
-  }, []);
+    updateBehaviorSignal("roaming", false);
+  }, [updateBehaviorSignal]);
 
   const startDesktopWalk = useCallback(async () => {
     if (!isDesktopRuntime()) return;
@@ -97,7 +147,10 @@ export function PetOverlay() {
     let previous = performance.now();
 
     setFacing(direction < 0 ? "left" : "right");
-    setAnimation("walk");
+    if (updateBehaviorSignal("roaming", true) !== "roaming") {
+      updateBehaviorSignal("roaming", false);
+      return;
+    }
     setSpeech(null);
 
     const step = async (now: number) => {
@@ -112,7 +165,7 @@ export function PetOverlay() {
       if (token !== desktopMotionTokenRef.current) return;
 
       if (arrived) {
-        setAnimation("idle");
+        updateBehaviorSignal("roaming", false);
         showSpeech("到了！", 1300);
         await constrainPetWindow(appWindow);
         return;
@@ -121,7 +174,7 @@ export function PetOverlay() {
     };
 
     requestAnimationFrame((now) => void step(now));
-  }, [showSpeech]);
+  }, [showSpeech, updateBehaviorSignal]);
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
@@ -133,7 +186,9 @@ export function PetOverlay() {
           return;
         }
         stopDesktopMotion();
-        setAnimation(behavior);
+        updateBehaviorSignal("sleeping", behavior === "sleep");
+        updateBehaviorSignal("reacting", behavior !== "sleep" && behavior !== "idle");
+        if (behavior !== "idle" && behavior !== "sleep") setAnimation(behavior);
         showSpeech(SPEECH[behavior] ?? behavior);
       }),
       listenDesktop<boolean>(DESKTOP_EVENTS.debug, (enabled) => setDebug(enabled)),
@@ -145,9 +200,37 @@ export function PetOverlay() {
       listenDesktop<null>(DESKTOP_EVENTS.toggleAlwaysOnTop, () =>
         setAlwaysOnTop((enabled) => !enabled),
       ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.windowAware, setWindowAware),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleWindowAware, () =>
+        setWindowAware((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.windowAware, next);
+          return next;
+        }),
+      ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.followActiveWindow, setFollowActiveWindow),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleFollowActiveWindow, () =>
+        setFollowActiveWindow((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.followActiveWindow, next);
+          return next;
+        }),
+      ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.desktopFloorFallback, setDesktopFloorFallback),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleDesktopFloorFallback, () =>
+        setDesktopFloorFallback((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, next);
+          return next;
+        }),
+      ),
+      listenDesktop<AccessibilityPermissionStatus>(
+        DESKTOP_EVENTS.accessibilityStatusChanged,
+        setPermissionStatus,
+      ),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [showSpeech, startDesktopWalk, stopDesktopMotion]);
+  }, [showSpeech, startDesktopWalk, stopDesktopMotion, updateBehaviorSignal]);
 
   useEffect(() => {
     if (!selectedPackage) return;
@@ -156,6 +239,10 @@ export function PetOverlay() {
     const renderer = new SpriteRenderer();
     rendererRef.current = renderer;
     void renderer.load(selectedPackage).then(() => renderer.play("idle"));
+    behaviorEngineRef.current.clear();
+    setBehaviorState("idle");
+    lastWindowSnapshotRef.current = null;
+    lastWindowFeetXRef.current = null;
     setAnimation("idle");
     showSpeech(`嗨，我是 ${selectedPackage.manifest.name}。`);
   }, [selectedPackage, showSpeech, stopDesktopMotion]);
@@ -184,6 +271,173 @@ export function PetOverlay() {
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
+    writeBooleanSetting(DESKTOP_STORAGE.windowAware, windowAware);
+    writeBooleanSetting(DESKTOP_STORAGE.followActiveWindow, followActiveWindow);
+    writeBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, desktopFloorFallback);
+  }, [desktopFloorFallback, followActiveWindow, windowAware]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let active = true;
+    const refresh = () => {
+      void getAccessibilityPermissionStatus().then((status) => {
+        if (active) setPermissionStatus(status);
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const positionOnDesktopFloor = useCallback(async () => {
+    if (!isDesktopRuntime() || !selectedPackage) return;
+    const appWindow = getCurrentWindow();
+    const [monitor, position, windowSize] = await Promise.all([
+      currentMonitor(),
+      appWindow.outerPosition(),
+      appWindow.outerSize(),
+    ]);
+    if (!monitor || activeGestureRef.current) return;
+    const pixelScale = monitor.scaleFactor;
+    const metrics: FeetAnchorMetrics = {
+      overlayWidth: windowSize.width,
+      overlayHeight: windowSize.height,
+      frameWidth: selectedPackage.manifest.renderer.frameWidth,
+      frameHeight: selectedPackage.manifest.renderer.frameHeight,
+      feet: selectedPackage.manifest.anchors.feet,
+      scale: scale * pixelScale,
+      facing,
+      avatarBottom: 16 * pixelScale,
+    };
+    const target = desktopFloorFeetPosition(
+      position.x,
+      {
+        x: monitor.workArea.position.x,
+        y: monitor.workArea.position.y,
+        width: monitor.workArea.size.width,
+        height: monitor.workArea.size.height,
+      },
+      metrics,
+    );
+    surfaceModeRef.current = "floor";
+    await appWindow.setPosition(new PhysicalPosition(target.x, target.y));
+  }, [facing, scale, selectedPackage]);
+
+  const positionOnWindow = useCallback(async (
+    snapshot: DesktopWindowSnapshot,
+    preferredFeetX: number | null,
+  ) => {
+    if (!isDesktopRuntime() || !selectedPackage || activeGestureRef.current) return;
+    const appWindow = getCurrentWindow();
+    const [windowSize, windowPosition, pixelScale] = await Promise.all([
+      appWindow.innerSize(),
+      appWindow.outerPosition(),
+      appWindow.scaleFactor(),
+    ]);
+    const metrics: FeetAnchorMetrics = {
+      overlayWidth: windowSize.width / pixelScale,
+      overlayHeight: windowSize.height / pixelScale,
+      frameWidth: selectedPackage.manifest.renderer.frameWidth,
+      frameHeight: selectedPackage.manifest.renderer.frameHeight,
+      feet: selectedPackage.manifest.anchors.feet,
+      scale,
+      facing,
+      avatarBottom: 16,
+    };
+    const anchor = feetAnchorOffset(metrics);
+    const currentFeetX = windowPosition.x / pixelScale + anchor.x;
+    const target = windowTopFeetPosition(snapshot, metrics, preferredFeetX ?? currentFeetX);
+    surfaceModeRef.current = "window";
+    await positionPetWindow(target);
+    lastWindowFeetXRef.current = target.x + anchor.x;
+  }, [facing, scale, selectedPackage]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime() || !selectedPackage) return;
+
+    let active = true;
+    let polling = false;
+    let missedSnapshots = 0;
+    let fallbackPlaced = false;
+
+    const fallback = () => {
+      lastWindowSnapshotRef.current = null;
+      lastWindowFeetXRef.current = null;
+      updateBehaviorSignal("windowFollowing", false);
+      if (desktopFloorFallback && !fallbackPlaced) {
+        fallbackPlaced = true;
+        void positionOnDesktopFloor();
+      } else if (!desktopFloorFallback) {
+        surfaceModeRef.current = "manual";
+      }
+    };
+
+    if (!windowAware || !followActiveWindow || permissionStatus !== "authorized") {
+      fallback();
+      return;
+    }
+
+    const poll = async () => {
+      if (!active || polling) return;
+      polling = true;
+      try {
+        const snapshot = await getActiveDesktopWindow();
+        if (!active) return;
+        if (!snapshot || snapshot.minimized) {
+          missedSnapshots += 1;
+          if (missedSnapshots >= 3) fallback();
+          return;
+        }
+
+        missedSnapshots = 0;
+        fallbackPlaced = false;
+        updateBehaviorSignal("windowFollowing", true);
+        if (windowSnapshotChanged(lastWindowSnapshotRef.current, snapshot)) {
+          stopDesktopMotion();
+          const previous = lastWindowSnapshotRef.current;
+          let preferredFeetX = lastWindowFeetXRef.current;
+          if (
+            previous &&
+            preferredFeetX !== null &&
+            previous.appId === snapshot.appId &&
+            previous.monitorId === snapshot.monitorId
+          ) {
+            preferredFeetX += snapshot.bounds.x - previous.bounds.x;
+          }
+          lastWindowSnapshotRef.current = snapshot;
+          await positionOnWindow(snapshot, preferredFeetX);
+        }
+      } catch {
+        missedSnapshots += 1;
+        if (missedSnapshots >= 3) fallback();
+      } finally {
+        polling = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), WINDOW_TRACKING_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [
+    desktopFloorFallback,
+    followActiveWindow,
+    permissionStatus,
+    positionOnDesktopFloor,
+    positionOnWindow,
+    selectedPackage,
+    stopDesktopMotion,
+    updateBehaviorSignal,
+    windowAware,
+  ]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
     const appWindow = getCurrentWindow();
     const unlisteners: (() => void)[] = [];
     let constrainTimer: number | null = null;
@@ -193,6 +447,7 @@ export function PetOverlay() {
       unlisteners.push(
         await appWindow.onMoved(({ payload }) => {
           if (activeGestureRef.current) activeGestureRef.current.moved = true;
+          if (surfaceModeRef.current !== "manual") return;
           persistPetWindowPosition(payload);
           if (constrainTimer) globalThis.clearTimeout(constrainTimer);
           constrainTimer = globalThis.setTimeout(() => void constrainPetWindow(appWindow), 350);
@@ -224,12 +479,18 @@ export function PetOverlay() {
     if (!region) return;
 
     stopDesktopMotion();
+    updateBehaviorSignal("dragging", true);
+    surfaceModeRef.current = "manual";
+    lastWindowSnapshotRef.current = null;
+    lastWindowFeetXRef.current = null;
 
     if (!isDesktopRuntime()) {
       if (region === "head") {
+        updateBehaviorSignal("reacting", true);
         setAnimation("happy");
         showSpeech(SPEECH.head);
       }
+      updateBehaviorSignal("dragging", false);
       return;
     }
 
@@ -245,10 +506,14 @@ export function PetOverlay() {
     } finally {
       if (activeGestureRef.current === gesture) {
         if (gesture.region === "head" && !gesture.moved) {
+          updateBehaviorSignal("reacting", true);
           setAnimation("happy");
           showSpeech(SPEECH.head);
         }
         activeGestureRef.current = null;
+        updateBehaviorSignal("dragging", false);
+        lastWindowSnapshotRef.current = null;
+        lastWindowFeetXRef.current = null;
       }
     }
   };
@@ -257,7 +522,10 @@ export function PetOverlay() {
   if (!selectedPackage) return null;
 
   return (
-    <main className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}>
+    <main
+      className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}
+      data-behavior-state={behaviorState}
+    >
       <div className="pet-overlay__avatar">
         <SpriteAvatar
           pkg={selectedPackage}

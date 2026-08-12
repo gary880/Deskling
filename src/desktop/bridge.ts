@@ -9,6 +9,13 @@ export const DESKTOP_EVENTS = {
   toggleClickThrough: "deskling-toggle-click-through",
   alwaysOnTop: "deskling-always-on-top",
   toggleAlwaysOnTop: "deskling-toggle-always-on-top",
+  windowAware: "deskling-window-aware",
+  toggleWindowAware: "deskling-toggle-window-aware",
+  followActiveWindow: "deskling-follow-active-window",
+  toggleFollowActiveWindow: "deskling-toggle-follow-active-window",
+  desktopFloorFallback: "deskling-desktop-floor-fallback",
+  toggleDesktopFloorFallback: "deskling-toggle-desktop-floor-fallback",
+  accessibilityStatusChanged: "deskling-accessibility-status-changed",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -16,6 +23,9 @@ export const DESKTOP_STORAGE = {
   petPosition: "deskling.petPosition",
   clickThrough: "deskling.clickThrough",
   alwaysOnTop: "deskling.alwaysOnTop",
+  windowAware: "deskling.windowAware",
+  followActiveWindow: "deskling.followActiveWindow",
+  desktopFloorFallback: "deskling.desktopFloorFallback",
 } as const;
 
 export function isDesktopRuntime(): boolean {

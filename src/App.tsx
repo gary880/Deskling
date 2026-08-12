@@ -13,6 +13,12 @@ import {
   showPetWindow,
   writeBooleanSetting,
 } from "./desktop/bridge";
+import {
+  getAccessibilityPermissionStatus,
+  openAccessibilitySettings,
+  requestAccessibilityPermission,
+  type AccessibilityPermissionStatus,
+} from "./desktop/desktopWorld";
 import { usePetCatalog } from "./hooks/usePetCatalog";
 import { MotionEngine } from "./motion/MotionEngine";
 import { SpriteRenderer } from "./renderers/SpriteRenderer";
@@ -50,6 +56,18 @@ export function App() {
   );
   const [alwaysOnTop, setAlwaysOnTop] = useState(() =>
     readBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, true),
+  );
+  const [windowAware, setWindowAware] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.windowAware, true),
+  );
+  const [followActiveWindow, setFollowActiveWindow] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.followActiveWindow, true),
+  );
+  const [desktopFloorFallback, setDesktopFloorFallback] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, true),
+  );
+  const [permissionStatus, setPermissionStatus] = useState<AccessibilityPermissionStatus>(
+    isDesktopRuntime() ? "denied" : "unsupported",
   );
   const stageRef = useRef<HTMLDivElement>(null);
   const dragPointerRef = useRef<number | null>(null);
@@ -92,8 +110,52 @@ export function App() {
           return next;
         }),
       ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.windowAware, setWindowAware),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleWindowAware, () =>
+        setWindowAware((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.windowAware, next);
+          return next;
+        }),
+      ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.followActiveWindow, setFollowActiveWindow),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleFollowActiveWindow, () =>
+        setFollowActiveWindow((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.followActiveWindow, next);
+          return next;
+        }),
+      ),
+      listenDesktop<boolean>(DESKTOP_EVENTS.desktopFloorFallback, setDesktopFloorFallback),
+      listenDesktop<null>(DESKTOP_EVENTS.toggleDesktopFloorFallback, () =>
+        setDesktopFloorFallback((enabled) => {
+          const next = !enabled;
+          writeBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, next);
+          return next;
+        }),
+      ),
+      listenDesktop<AccessibilityPermissionStatus>(
+        DESKTOP_EVENTS.accessibilityStatusChanged,
+        setPermissionStatus,
+      ),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let active = true;
+    const refresh = () => {
+      void getAccessibilityPermissionStatus().then((status) => {
+        if (active) setPermissionStatus(status);
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -171,6 +233,33 @@ export function App() {
     setAlwaysOnTop(enabled);
     writeBooleanSetting(DESKTOP_STORAGE.alwaysOnTop, enabled);
     void emitToPet(DESKTOP_EVENTS.alwaysOnTop, enabled);
+  };
+
+  const updateWindowAware = (enabled: boolean) => {
+    setWindowAware(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.windowAware, enabled);
+    void emitToPet(DESKTOP_EVENTS.windowAware, enabled);
+    if (enabled && permissionStatus === "denied") {
+      void requestAccessibilityPermission().then(setPermissionStatus);
+    }
+  };
+
+  const updateFollowActiveWindow = (enabled: boolean) => {
+    setFollowActiveWindow(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.followActiveWindow, enabled);
+    void emitToPet(DESKTOP_EVENTS.followActiveWindow, enabled);
+  };
+
+  const updateDesktopFloorFallback = (enabled: boolean) => {
+    setDesktopFloorFallback(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, enabled);
+    void emitToPet(DESKTOP_EVENTS.desktopFloorFallback, enabled);
+  };
+
+  const handleAccessibilityAction = async () => {
+    const status = await requestAccessibilityPermission();
+    setPermissionStatus(status);
+    if (status === "denied") await openAccessibilitySettings();
   };
 
   const stagePoint = (clientX: number): number => {
@@ -299,6 +388,66 @@ export function App() {
           </div>
 
           <div className="panel-section panel-section--bottom">
+            <div className="window-awareness-settings">
+              <p className="eyebrow">DESKTOP WORLD</p>
+              <label className="debug-toggle">
+                <span>
+                  <strong>視窗感知模式</strong>
+                  <small>Window-aware mode</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={windowAware}
+                  disabled={!isDesktopRuntime()}
+                  onChange={(event) => updateWindowAware(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+              <label className="debug-toggle">
+                <span>
+                  <strong>跟隨使用中視窗</strong>
+                  <small>Follow active window</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={followActiveWindow}
+                  disabled={!windowAware || !isDesktopRuntime()}
+                  onChange={(event) => updateFollowActiveWindow(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+              <label className="debug-toggle">
+                <span>
+                  <strong>桌面底部備援</strong>
+                  <small>Desktop floor fallback</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={desktopFloorFallback}
+                  disabled={!isDesktopRuntime()}
+                  onChange={(event) => updateDesktopFloorFallback(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+              <div className="permission-status">
+                <span>
+                  <strong>輔助使用權限</strong>
+                  <small>僅讀取視窗位置與尺寸</small>
+                </span>
+                <button
+                  type="button"
+                  className={`permission-status__badge permission-status__badge--${permissionStatus}`}
+                  disabled={!isDesktopRuntime() || permissionStatus === "authorized"}
+                  onClick={() => void handleAccessibilityAction()}
+                >
+                  {permissionStatus === "authorized"
+                    ? "已授權"
+                    : permissionStatus === "denied"
+                      ? "前往授權"
+                      : "不支援"}
+                </button>
+              </div>
+            </div>
             <label className="debug-toggle">
               <span>
                 <strong>顯示結構</strong>

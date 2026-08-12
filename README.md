@@ -38,10 +38,20 @@ cd src-tauri && cargo check
 - 透明、無邊框、always-on-top overlay
 - 原生視窗拖曳、螢幕 work area 邊界限制與位置保存
 - Click-through mode 與 menu bar 控制
+- macOS Accessibility 授權狀態、系統設定引導與未授權降級
+- Active window 的位置／尺寸追蹤、跨螢幕與負座標支援
+- 以 package `feet` anchor 對齊視窗上緣或 Desktop Floor
+- `dragging > reacting > windowFollowing > roaming > sleeping > idle` 行為優先序
 
 Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `deskling.json` 與 `spritesheet.webp` 的資料夾，再將 manifest URL 加進 catalog 即可。
 
-目前優先支援 macOS。透明背景使用 Tauri 的 `macOSPrivateApi`，適合直接散佈與公證，但不符合 Mac App Store 的 private API 規則。正式 ZIP import、其他應用程式 window awareness 與 Accessibility 權限仍留在後續切片。
+目前優先支援 macOS。透明背景使用 Tauri 的 `macOSPrivateApi`，適合直接散佈與公證，但不符合 Mac App Store 的 private API 規則。正式 ZIP import 與其他平台的 window awareness 仍留在後續切片。
+
+### Window-aware mode（macOS）
+
+從 Control Window 的 `DESKTOP WORLD` 區塊開啟視窗感知模式與跟隨使用中視窗。Deskling 會請求 macOS「輔助使用」權限；授權後只讀取 focused window 的位置、尺寸、最小化狀態與所屬程序 ID，不讀取視窗內容、標題或鍵盤輸入，也不會追蹤 Deskling 自己的 Control／Pet 視窗。
+
+未授權、目標關閉或最小化時，寵物會在啟用 `Desktop floor fallback` 的情況下回到目前螢幕底部；拖曳與既有 behavior 仍可使用。權限也可從 menu bar 的 `Accessibility` 項目重新開啟系統設定。
 
 ### Overlay 操作
 
