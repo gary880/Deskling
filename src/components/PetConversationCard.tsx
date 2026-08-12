@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { ConversationStatus } from "../agent/conversation";
+import { shouldSubmitConversationKey, type ConversationStatus } from "../agent/conversation";
 import type { PetMemoryCategory } from "../domain/petMemory";
 
 interface PetConversationCardProps {
@@ -26,9 +26,14 @@ export function PetConversationCard({
   const [memoryDraft, setMemoryDraft] = useState<string | null>(null);
   const [memoryCategory, setMemoryCategory] = useState<PetMemoryCategory>("fact");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composingRef = useRef(false);
+  const compositionEndedAtRef = useRef<number | null>(null);
   const busy = status === "thinking" || status === "talking";
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 120);
+    return () => window.clearTimeout(timer);
+  }, []);
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
@@ -45,7 +50,14 @@ export function PetConversationCard({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    const endedAt = compositionEndedAtRef.current;
+    if (shouldSubmitConversationKey({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isComposing: composingRef.current || event.nativeEvent.isComposing,
+      keyCode: event.nativeEvent.keyCode,
+      millisecondsSinceCompositionEnd: endedAt === null ? undefined : performance.now() - endedAt,
+    })) {
       event.preventDefault();
       void submit();
     }
@@ -78,6 +90,8 @@ export function PetConversationCard({
             setMessage(event.target.value);
             onTypingChange?.(Boolean(event.target.value));
           }}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; compositionEndedAtRef.current = performance.now(); }}
           onKeyDown={onKeyDown}
         />
         {busy

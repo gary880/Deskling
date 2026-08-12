@@ -41,6 +41,24 @@
         "focus": false,
         "backgroundThrottling": "disabled",
         "visible": false
+      },
+      {
+        "label": "conversation",
+        "url": "index.html?view=conversation",
+        "title": "Deskling Conversation",
+        "width": 380,
+        "height": 300,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": true,
+        "backgroundThrottling": "disabled",
+        "visible": false
       }
     ],
     "security": {

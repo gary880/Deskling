@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AutonomousBehaviorScheduler,
   DEFAULT_AUTONOMY_SETTINGS,
@@ -24,11 +25,11 @@ import {
   type AgentActivityEvent,
 } from "../behavior/AgentActivity";
 import { SpriteAvatar } from "../components/SpriteAvatar";
-import { PetConversationCard } from "../components/PetConversationCard";
 import { DEFAULT_HISTORY_SETTINGS, statusFromEvent, type ConversationEvent, type ConversationHistoryEntry, type ConversationHistorySettings, type ConversationStatus } from "../agent/conversation";
 import type { Facing, HitRegion, PetPersonalityOverride, Point } from "../domain/avatar";
 import { composePetInstructions, effectivePersonality } from "../domain/personality";
 import { DEFAULT_MEMORY_SETTINGS, selectRelevantMemories, sensitiveMemoryReason, type PetMemory, type PetMemorySettings } from "../domain/petMemory";
+import type { ConversationUiAction, ConversationUiState } from "./ConversationWindow";
 import {
   DEFAULT_PROACTIVE_SETTINGS,
   canStartProactiveInteraction,
@@ -47,6 +48,7 @@ import {
   DESKTOP_STORAGE,
   agentRuntimeAvailable,
   appendConversationHistory,
+  emitToConversation,
   isDesktopRuntime,
   listenDesktop,
   loadPetPersonality,
@@ -98,10 +100,6 @@ interface ActivePetGesture {
 
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 const PET_DOUBLE_CLICK_MS = 400;
-const PET_WINDOW_COLLAPSED_WIDTH = 320;
-const PET_WINDOW_COLLAPSED_HEIGHT = 300;
-const PET_WINDOW_CONVERSATION_WIDTH = 700;
-const PET_WINDOW_CONVERSATION_HEIGHT = 360;
 
 export function PetOverlay() {
   const { packages, error } = usePetCatalog();
@@ -139,7 +137,6 @@ export function PetOverlay() {
   const [lastDirectMessage, setLastDirectMessage] = useState("");
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
   const [memorySaveStatus, setMemorySaveStatus] = useState("");
-  const [conversationLayoutStatus, setConversationLayoutStatus] = useState("");
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
   const [personalityOverrides, setPersonalityOverrides] = useState<PetPersonalityOverride>({});
   const [proactiveSettings, setProactiveSettings] = useState<ProactiveInteractionSettings>(() => {
@@ -202,66 +199,16 @@ export function PetOverlay() {
   const historySettingsRef = useRef(historySettings);
   const memorySettingsRef = useRef(memorySettings);
   const conversationRequestIdRef = useRef<string | null>(null);
-  const layoutResizingRef = useRef(false);
-  const appliedConversationLayoutRef = useRef<{ open: boolean; side: "left" | "right" }>({ open: false, side: conversationSide });
+  const conversationSendPendingRef = useRef(false);
+  const positionConversationRef = useRef<() => Promise<void>>(async () => undefined);
   const conversationOpenRef = useRef(conversationOpen);
-
+  const conversationFocusGraceUntilRef = useRef(0);
   useEffect(() => { conversationOpenRef.current = conversationOpen; }, [conversationOpen]);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
     [packages, selectedId],
   );
-
-  useEffect(() => {
-    if (!isDesktopRuntime()) return;
-    let cancelled = false;
-    const resize = async () => {
-      const appWindow = getCurrentWindow();
-      const [size, position, scaleFactor] = await Promise.all([
-        appWindow.innerSize(),
-        appWindow.outerPosition(),
-        appWindow.scaleFactor(),
-      ]);
-      if (cancelled) return;
-      const targetWidth = Math.round((conversationOpen ? PET_WINDOW_CONVERSATION_WIDTH : PET_WINDOW_COLLAPSED_WIDTH) * scaleFactor);
-      const targetHeight = Math.round((conversationOpen ? PET_WINDOW_CONVERSATION_HEIGHT : PET_WINDOW_COLLAPSED_HEIGHT) * scaleFactor);
-      const applied = appliedConversationLayoutRef.current;
-      if (size.width === targetWidth && size.height === targetHeight && applied.open === conversationOpen && (!conversationOpen || applied.side === conversationSide)) return;
-      const currentPetX = applied.open
-        ? applied.side === "right" ? PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor : size.width - PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor
-        : size.width / 2;
-      const targetPetX = conversationOpen
-        ? conversationSide === "right" ? PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor : targetWidth - PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor
-        : targetWidth / 2;
-      const canonicalPetWindowPosition = {
-        x: position.x + currentPetX - PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor,
-        y: position.y + size.height - PET_WINDOW_COLLAPSED_HEIGHT * scaleFactor,
-      };
-      layoutResizingRef.current = true;
-      await appWindow.setResizable(true);
-      await appWindow.setSize(new PhysicalSize(targetWidth, targetHeight));
-      if (!cancelled) {
-        await appWindow.setPosition(new PhysicalPosition(
-          Math.round(canonicalPetWindowPosition.x + PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor - targetPetX),
-          Math.round(canonicalPetWindowPosition.y + PET_WINDOW_COLLAPSED_HEIGHT * scaleFactor - targetHeight),
-        ));
-        appliedConversationLayoutRef.current = { open: conversationOpen, side: conversationSide };
-        setConversationLayoutStatus("");
-        await appWindow.setResizable(false);
-        window.setTimeout(() => { layoutResizingRef.current = false; }, 150);
-      } else {
-        await appWindow.setResizable(false);
-        layoutResizingRef.current = false;
-      }
-    };
-    void resize().catch((error) => {
-      layoutResizingRef.current = false;
-      void getCurrentWindow().setResizable(false);
-      setConversationLayoutStatus(`Sidecar 版面調整失敗：${String(error)}`);
-    });
-    return () => { cancelled = true; };
-  }, [conversationOpen, conversationSide]);
 
   const addHistoryEntry = useCallback(async (entry: ConversationHistoryEntry) => {
     if (!selectedPackage) return;
@@ -610,6 +557,7 @@ export function PetOverlay() {
           return;
         }
         const status = statusFromEvent(event);
+        if (event.type === "completed" || event.type === "error") conversationSendPendingRef.current = false;
         setConversationStatus(status);
         if (event.type === "started") {
           conversationRequestIdRef.current = event.requestId;
@@ -805,7 +753,7 @@ export function PetOverlay() {
   }, []);
 
   const positionOnDesktopFloor = useCallback(async () => {
-    if (!isDesktopRuntime() || !selectedPackage || conversationOpen) return;
+    if (!isDesktopRuntime() || !selectedPackage) return;
     const appWindow = getCurrentWindow();
     const [monitor, position, windowSize] = await Promise.all([
       currentMonitor(),
@@ -868,7 +816,7 @@ export function PetOverlay() {
   }, [dispatchSurface, facing, scale, selectedPackage]);
 
   useEffect(() => {
-    if (!isDesktopRuntime() || !selectedPackage || conversationOpen) return;
+    if (!isDesktopRuntime() || !selectedPackage) return;
 
     let active = true;
     let polling = false;
@@ -897,6 +845,7 @@ export function PetOverlay() {
         const snapshot = await getActiveDesktopWindow();
         if (!active) return;
         if (!snapshot || snapshot.minimized) {
+          if (Date.now() < conversationFocusGraceUntilRef.current) return;
           missedSnapshots += 1;
           if (missedSnapshots >= 3) fallback();
           return;
@@ -950,7 +899,6 @@ export function PetOverlay() {
     stopDesktopMotion,
     dispatchSurface,
     windowAware,
-    conversationOpen,
   ]);
 
   useEffect(() => {
@@ -963,18 +911,10 @@ export function PetOverlay() {
       await restorePetWindowPosition(appWindow);
       unlisteners.push(
         await appWindow.onMoved(async ({ payload }) => {
-          if (layoutResizingRef.current) return;
           if (activeGestureRef.current) activeGestureRef.current.moved = true;
           if (surfaceModeRef.current !== "manual") return;
-          const [size, scaleFactor] = await Promise.all([appWindow.innerSize(), appWindow.scaleFactor()]);
-          const applied = appliedConversationLayoutRef.current;
-          const petX = applied.open
-            ? applied.side === "right" ? PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor : size.width - PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor
-            : size.width / 2;
-          persistPetWindowPosition({
-            x: Math.round(payload.x + petX - PET_WINDOW_COLLAPSED_WIDTH / 2 * scaleFactor),
-            y: Math.round(payload.y + size.height - PET_WINDOW_COLLAPSED_HEIGHT * scaleFactor),
-          });
+          persistPetWindowPosition(payload);
+          if (conversationOpenRef.current) void positionConversationRef.current();
           if (constrainTimer) globalThis.clearTimeout(constrainTimer);
           if (!conversationOpenRef.current) constrainTimer = globalThis.setTimeout(() => void constrainPetWindow(appWindow), 350);
         }),
@@ -1090,12 +1030,114 @@ export function PetOverlay() {
     lastInteractionAtRef.current = Date.now();
   };
 
+  const positionConversationWindow = useCallback(async () => {
+    if (!isDesktopRuntime()) return;
+    const petWindow = getCurrentWindow();
+    const conversationWindow = await WebviewWindow.getByLabel("conversation");
+    if (!conversationWindow) return;
+    const [petPosition, petSize, conversationSize, monitor] = await Promise.all([
+      petWindow.outerPosition(), petWindow.outerSize(), conversationWindow.outerSize(), currentMonitor(),
+    ]);
+    const gap = 12 * (monitor?.scaleFactor ?? 1);
+    const workArea = monitor?.workArea;
+    let x = conversationSide === "left"
+      ? petPosition.x - conversationSize.width - gap
+      : petPosition.x + petSize.width + gap;
+    let y = petPosition.y + (petSize.height - conversationSize.height) / 2;
+    if (workArea) {
+      x = Math.min(Math.max(x, workArea.position.x), workArea.position.x + workArea.size.width - conversationSize.width);
+      y = Math.min(Math.max(y, workArea.position.y), workArea.position.y + workArea.size.height - conversationSize.height);
+    }
+    await conversationWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
+  }, [conversationSide]);
+  positionConversationRef.current = positionConversationWindow;
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    void (async () => {
+      const conversationWindow = await WebviewWindow.getByLabel("conversation");
+      if (!conversationWindow) return;
+      if (!conversationOpen) { await conversationWindow.hide(); return; }
+      await positionConversationWindow();
+      await conversationWindow.show();
+      await conversationWindow.setFocus();
+    })();
+  }, [conversationOpen, conversationSide, positionConversationWindow]);
+
+  useEffect(() => {
+    if (!conversationOpen || !selectedPackage) return;
+    const state: ConversationUiState = {
+      petName: effectivePersonality(selectedPackage.manifest, personalityOverrides).nickname ?? selectedPackage.manifest.name,
+      response: conversationResponse,
+      memoryCandidate: lastDirectMessage,
+      status: conversationStatus,
+      runtimeAvailable,
+      memoryStatus: memorySaveStatus,
+      side: conversationSide,
+    };
+    void emitToConversation(DESKTOP_EVENTS.conversationUiState, state);
+  }, [conversationOpen, conversationResponse, conversationSide, conversationStatus, lastDirectMessage, memorySaveStatus, personalityOverrides, runtimeAvailable, selectedPackage]);
+
+  useEffect(() => {
+    if (!selectedPackage) return;
+    let active = true;
+    let unlisten: () => void = () => undefined;
+    void listenDesktop<ConversationUiAction>(DESKTOP_EVENTS.conversationUiAction, (action) => {
+      if (action.type === "close") {
+        conversationFocusGraceUntilRef.current = Date.now() + 1_000;
+        setConversationOpen(false);
+        setUserTyping(false);
+        return;
+      }
+      if (action.type === "typing") { setUserTyping(action.typing); return; }
+      if (action.type === "side") { localStorage.setItem("deskling.conversationSide", action.side); setConversationSide(action.side); return; }
+      if (action.type === "stop") {
+        conversationSendPendingRef.current = false;
+        void stopPetConversation().then(() => { agentActivityEngineRef.current.clear(); setAgentEvent(null); setConversationStatus("idle"); setConversationResponse("已停止。"); schedulerRef.current?.notifyActivity(); });
+        return;
+      }
+      if (action.type === "remember") {
+        const reason = sensitiveMemoryReason(action.content);
+        if (reason) { setMemorySaveStatus(reason); return; }
+        const now = Date.now();
+        const memory: PetMemory = { id: crypto.randomUUID(), category: action.category, content: action.content, createdAt: now, updatedAt: now, sourceConversationId: conversationRequestIdRef.current ?? undefined };
+        setMemorySaveStatus("正在保存記憶…");
+        void savePetMemory(selectedPackage.manifest.id, memory, memorySettings.maxEntries).then((saved) => {
+          if (!saved.some((item) => item.id === memory.id)) throw new Error("記憶未成功寫入，請稍後再試。");
+          setMemorySaveStatus("已保存至 Pet Lab → MEMORY");
+        }).catch((error) => setMemorySaveStatus(`保存失敗：${String(error)}`));
+        return;
+      }
+      if (action.type === "send") {
+        if (conversationSendPendingRef.current) return;
+        conversationSendPendingRef.current = true;
+        void (async () => {
+          try {
+            setMemorySaveStatus(""); setLastDirectMessage(action.message); lastInteractionAtRef.current = Date.now(); setUserTyping(false); setConversationStatus("thinking");
+            await addHistoryEntry({ id: crypto.randomUUID(), role: "user", content: action.message, source: "direct", createdAt: Date.now() });
+            const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
+            const stored = memorySettings.enabled ? await loadPetMemory(selectedPackage.manifest.id, memorySettings.maxEntries) : [];
+            await startPetConversation(action.message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "conversation", selectRelevantMemories(stored, action.message));
+          } catch (error) {
+            conversationSendPendingRef.current = false;
+            setConversationStatus("error");
+            setConversationResponse(String(error));
+          }
+        })();
+      }
+    }).then((value) => {
+      if (active) unlisten = value;
+      else value();
+    });
+    return () => { active = false; unlisten(); };
+  }, [addHistoryEntry, memorySettings.enabled, memorySettings.maxEntries, personalityOverrides, selectedPackage]);
+
   if (error) return <div className="overlay-error">{error}</div>;
   if (!selectedPackage) return null;
 
   return (
     <main
-      className={`pet-overlay ${conversationOpen ? `pet-overlay--conversation pet-overlay--conversation-${conversationSide}` : ""} ${clickThrough ? "pet-overlay--click-through" : ""}`}
+      className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}
       data-behavior-state={behaviorState}
       data-surface-state={surfaceState}
       data-agent-activity={agentEvent?.activity ?? "idle"}
@@ -1116,62 +1158,6 @@ export function PetOverlay() {
           onSpeechClick={proactiveMessage ? openProactiveConversation : undefined}
         />
       </div>
-      {conversationOpen && (
-        <PetConversationCard
-          petName={effectivePersonality(selectedPackage.manifest, personalityOverrides).nickname ?? selectedPackage.manifest.name}
-          response={conversationResponse}
-          memoryCandidate={lastDirectMessage}
-          side={conversationSide}
-          onSideChange={(side) => { localStorage.setItem("deskling.conversationSide", side); setConversationSide(side); }}
-          status={conversationStatus}
-          runtimeAvailable={runtimeAvailable}
-          memoryStatus={memorySaveStatus}
-          layoutStatus={conversationLayoutStatus}
-          onClose={() => { setConversationOpen(false); setUserTyping(false); }}
-          onSend={async (message) => {
-            try {
-              setMemorySaveStatus("");
-              setLastDirectMessage(message);
-              lastInteractionAtRef.current = Date.now();
-              setUserTyping(false);
-              setConversationStatus("thinking");
-              await addHistoryEntry({ id: crypto.randomUUID(), role: "user", content: message, source: "direct", createdAt: Date.now() });
-              const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
-              let approvedMemories: PetMemory[] = [];
-              if (memorySettings.enabled) {
-                const stored = await loadPetMemory(selectedPackage.manifest.id, memorySettings.maxEntries);
-                approvedMemories = selectRelevantMemories(stored, message);
-              }
-              await startPetConversation(message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "conversation", approvedMemories);
-            } catch (error) {
-              setConversationStatus("error");
-              setConversationResponse(String(error));
-            }
-          }}
-          onRemember={(proposed, category) => {
-            const reason = sensitiveMemoryReason(proposed);
-            if (reason) { setMemorySaveStatus(reason); return; }
-            const now = Date.now();
-            const memory: PetMemory = { id: crypto.randomUUID(), category, content: proposed, createdAt: now, updatedAt: now, sourceConversationId: conversationRequestIdRef.current ?? undefined };
-            setMemorySaveStatus("正在保存記憶…");
-            void savePetMemory(selectedPackage.manifest.id, memory, memorySettings.maxEntries)
-              .then((saved) => {
-                if (!saved.some((item) => item.id === memory.id)) throw new Error("記憶未成功寫入，請稍後再試。");
-                setMemorySaveStatus("已保存至 Pet Lab → MEMORY");
-              })
-              .catch((error) => setMemorySaveStatus(`保存失敗：${String(error)}`));
-          }}
-          onStop={async () => {
-            await stopPetConversation();
-            agentActivityEngineRef.current.clear();
-            setAgentEvent(null);
-            setConversationStatus("idle");
-            setConversationResponse("已停止。");
-            schedulerRef.current?.notifyActivity();
-          }}
-          onTypingChange={setUserTyping}
-        />
-      )}
       {debug && (
         <button className="overlay-facing" onClick={() => setFacing(facing === "left" ? "right" : "left")}>
           facing: {facing}

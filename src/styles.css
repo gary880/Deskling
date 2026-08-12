@@ -387,6 +387,8 @@ button { color: inherit; }
 }
 
 .pet-overlay-body { min-width: 0; min-height: 0; }
+.conversation-window-shell { position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+.conversation-window-shell .pet-conversation { top: 12px; right: 12px; bottom: auto; left: 12px; width: auto; max-height: calc(100% - 24px); transform: none; animation-name: conversation-window-enter; }
 
 .pet-overlay {
   position: relative;
@@ -430,6 +432,8 @@ button { color: inherit; }
   box-shadow: 0 12px 32px rgba(48, 42, 34, .2);
   color: var(--ink);
   user-select: text;
+  transform-origin: center center;
+  animation: conversation-card-enter 180ms cubic-bezier(.2, .8, .2, 1) both;
 }
 .pet-conversation--left { right: auto; left: 18px; transform: translateY(-50%); }
 .pet-conversation--right { right: 18px; left: auto; transform: translateY(-50%); }
@@ -439,17 +443,20 @@ button { color: inherit; }
 .pet-conversation > header small { display: inline-flex; height: 11px; align-items: center; color: #aaa196; font: 400 7px/11px "SFMono-Regular", Consolas, monospace; }
 .pet-conversation > header button { width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: #8d857a; cursor: pointer; }
 .pet-conversation > header nav { display: flex; align-items: center; gap: 1px; }
+.pet-conversation > header nav button { width: 20px; height: 20px; padding: 0; font-size: 12px; line-height: 20px; }
 .pet-conversation > header nav button[aria-pressed="true"] { background: #eee5d9; color: #6f655a; }
+.pet-conversation > header nav button:last-child { margin-left: 3px; font-size: 14px; }
 .pet-conversation__dot { width: 7px; height: 7px; border-radius: 50%; background: #a7a096; }
 .pet-conversation__dot--thinking, .pet-conversation__dot--talking { background: var(--orange); box-shadow: 0 0 0 3px rgba(229, 119, 63, .12); }
 .pet-conversation__dot--completed { background: #76a16d; }
 .pet-conversation__dot--error { background: #c85e48; }
-.pet-conversation__response { min-height: 44px; max-height: 110px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; color: #4f4a43; font-size: 11px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pet-conversation__response { min-height: 40px; max-height: 116px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; color: #4f4a43; font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pet-conversation--memory .pet-conversation__response { max-height: 72px; }
 .pet-conversation__response i { display: inline-block; width: 5px; height: 11px; margin-left: 2px; vertical-align: -2px; background: var(--orange); animation: conversation-caret 800ms steps(1) infinite; }
 .pet-conversation form { display: grid; flex: 0 0 auto; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .pet-conversation textarea { height: 38px; min-height: 38px; max-height: 76px; box-sizing: border-box; resize: none; overflow-y: auto; padding: 9px 10px; border: 1px solid #d9d0c4; border-radius: 9px; outline: 0; background: #fff; color: var(--ink); font: 400 10px/1.4 inherit; }
-.pet-conversation textarea:focus { border-color: #d18a63; box-shadow: 0 0 0 2px rgba(209, 138, 99, .12); }
+.pet-conversation textarea { transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease; }
+.pet-conversation textarea:focus { border-color: #d18a63; background-color: #fffefd; box-shadow: 0 0 0 2px rgba(209, 138, 99, .12); }
 .pet-conversation form button { align-self: end; width: 44px; height: 38px; border: 0; border-radius: 9px; background: var(--orange); color: white; font-size: 9px; font-weight: 800; cursor: pointer; }
 .pet-conversation form button:disabled { opacity: .45; cursor: default; }
 .pet-conversation form .pet-conversation__stop { background: #8d8176; }
@@ -470,6 +477,9 @@ button { color: inherit; }
 .pet-conversation__memory-editor button:last-child { border-color: var(--orange); background: var(--orange); color: white; }
 .pet-conversation__memory-editor button:disabled { opacity: .45; cursor: default; }
 @keyframes conversation-caret { 50% { opacity: 0; } }
+@keyframes conversation-card-enter { from { opacity: 0; transform: translateY(-50%) scale(.975); } to { opacity: 1; transform: translateY(-50%) scale(1); } }
+@keyframes conversation-window-enter { from { opacity: 0; transform: scale(.975); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .pet-conversation { animation: none; } .pet-conversation textarea { transition: none; } }
 
 .personality-settings { display: grid; gap: 12px; }
 .personality-field { display: grid; gap: 6px; color: #5d554b; font-size: 11px; font-weight: 700; }

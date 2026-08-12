@@ -32,6 +32,8 @@ export const DESKTOP_EVENTS = {
   personalityChanged: "deskling-personality-changed",
   memoryChanged: "deskling-memory-changed",
   memorySettingsChanged: "deskling-memory-settings-changed",
+  conversationUiState: "deskling-conversation-ui-state",
+  conversationUiAction: "deskling-conversation-ui-action",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -201,6 +203,11 @@ export type { ConversationEvent };
 export async function emitToPet<T>(event: string, payload: T): Promise<void> {
   if (!isDesktopRuntime()) return;
   await emitTo("pet", event, payload);
+}
+
+export async function emitToConversation<T>(event: string, payload: T): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  await emitTo("conversation", event, payload);
 }
 
 export async function showPetWindow(): Promise<void> {

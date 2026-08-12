@@ -29,6 +29,22 @@ export const DEFAULT_HISTORY_SETTINGS: ConversationHistorySettings = {
   maxEntries: 200,
 };
 
+export interface ConversationKeyState {
+  key: string;
+  shiftKey: boolean;
+  isComposing: boolean;
+  keyCode?: number;
+  millisecondsSinceCompositionEnd?: number;
+}
+
+export function shouldSubmitConversationKey(state: ConversationKeyState): boolean {
+  return state.key === "Enter"
+    && !state.shiftKey
+    && !state.isComposing
+    && state.keyCode !== 229
+    && (state.millisecondsSinceCompositionEnd === undefined || state.millisecondsSinceCompositionEnd > 80);
+}
+
 export function statusFromEvent(event: ConversationEvent): ConversationStatus {
   if (event.type === "started") return "thinking";
   if (event.type === "text") return "talking";

@@ -4,7 +4,8 @@
   "description": "enables the default permissions",
   "windows": [
     "control",
-    "pet"
+    "pet",
+    "conversation"
   ],
   "permissions": [
     "core:default",
