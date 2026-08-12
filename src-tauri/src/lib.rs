@@ -4,6 +4,7 @@ use tauri::{
     Emitter, Manager, WindowEvent,
 };
 
+mod agent_runtime;
 mod desktop_world;
 mod pet_packages;
 
@@ -100,6 +101,35 @@ fn clear_agent_activity(app: tauri::AppHandle) -> AgentActivityEvent {
     };
     emit_to_frontends(&app, EVENT_AGENT_ACTIVITY, event.clone());
     event
+}
+
+#[tauri::command]
+fn agent_runtime_available() -> bool {
+    agent_runtime::available()
+}
+
+#[tauri::command]
+fn start_pet_conversation(
+    app: tauri::AppHandle,
+    state: tauri::State<agent_runtime::AgentRuntimeState>,
+    message: String,
+    pet_name: String,
+) -> Result<String, String> {
+    agent_runtime::start(app, &state, message, pet_name)
+}
+
+#[tauri::command]
+fn stop_pet_conversation(
+    state: tauri::State<agent_runtime::AgentRuntimeState>,
+) -> Result<(), String> {
+    agent_runtime::stop(&state)
+}
+
+#[tauri::command]
+fn reset_pet_conversation(
+    state: tauri::State<agent_runtime::AgentRuntimeState>,
+) -> Result<(), String> {
+    agent_runtime::reset(&state)
 }
 
 #[tauri::command]
@@ -305,6 +335,7 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(agent_runtime::AgentRuntimeState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             accessibility_permission_status,
@@ -316,7 +347,11 @@ pub fn run() {
             list_installed_pets,
             remove_installed_pet,
             report_agent_activity,
-            clear_agent_activity
+            clear_agent_activity,
+            agent_runtime_available,
+            start_pet_conversation,
+            stop_pet_conversation,
+            reset_pet_conversation
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

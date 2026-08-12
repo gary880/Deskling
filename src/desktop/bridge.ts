@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
+import type { ConversationEvent } from "../agent/conversation";
 
 export const DESKTOP_EVENTS = {
   selectPet: "deskling-select-pet",
@@ -20,6 +21,7 @@ export const DESKTOP_EVENTS = {
   autonomySettings: "deskling-autonomy-settings",
   petCatalogChanged: "deskling-pet-catalog-changed",
   agentActivity: "deskling-agent-activity",
+  conversation: "deskling-conversation-event",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -80,6 +82,31 @@ export async function clearAgentActivity(): Promise<AgentActivityEvent> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<AgentActivityEvent>("clear_agent_activity");
 }
+
+export async function agentRuntimeAvailable(): Promise<boolean> {
+  if (!isDesktopRuntime()) return false;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("agent_runtime_available");
+}
+
+export async function startPetConversation(message: string, petName: string): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("start_pet_conversation", { message, petName });
+}
+
+export async function stopPetConversation(): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("stop_pet_conversation");
+}
+
+export async function resetPetConversation(): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("reset_pet_conversation");
+}
+
+export type { ConversationEvent };
 
 export async function emitToPet<T>(event: string, payload: T): Promise<void> {
   if (!isDesktopRuntime()) return;

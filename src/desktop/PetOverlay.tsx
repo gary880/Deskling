@@ -24,16 +24,22 @@ import {
   type AgentActivityEvent,
 } from "../behavior/AgentActivity";
 import { SpriteAvatar } from "../components/SpriteAvatar";
+import { PetConversationCard } from "../components/PetConversationCard";
+import { statusFromEvent, type ConversationEvent, type ConversationStatus } from "../agent/conversation";
 import type { Facing, HitRegion, Point } from "../domain/avatar";
 import { usePetCatalog } from "../hooks/usePetCatalog";
 import { SpriteRenderer } from "../renderers/SpriteRenderer";
 import {
   DESKTOP_EVENTS,
   DESKTOP_STORAGE,
+  agentRuntimeAvailable,
   isDesktopRuntime,
   listenDesktop,
   readBooleanSetting,
   readNumberSetting,
+  resetPetConversation,
+  startPetConversation,
+  stopPetConversation,
   writeBooleanSetting,
   writeNumberSetting,
 } from "./bridge";
@@ -104,6 +110,10 @@ export function PetOverlay() {
   const [behaviorState, setBehaviorState] = useState<BehaviorState>("idle");
   const [surfaceState, setSurfaceState] = useState<SurfaceState>("manual");
   const [agentEvent, setAgentEvent] = useState<AgentActivityEvent | null>(null);
+  const [conversationOpen, setConversationOpen] = useState(false);
+  const [conversationResponse, setConversationResponse] = useState("");
+  const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
+  const [runtimeAvailable, setRuntimeAvailable] = useState(false);
   const [autonomySettings, setAutonomySettings] = useState<AutonomySettings>(() => ({
     enabled: readBooleanSetting(
       DESKTOP_STORAGE.autonomousBehavior,
@@ -341,6 +351,11 @@ export function PetOverlay() {
   }, [dispatchBehavior, stopDesktopMotion]); // Settings are applied by the configure effect.
 
   useEffect(() => {
+    if (!conversationOpen) return;
+    void agentRuntimeAvailable().then(setRuntimeAvailable);
+  }, [conversationOpen]);
+
+  useEffect(() => {
     const unlisteners: (() => void)[] = [];
     void Promise.all([
       listenDesktop<string>(DESKTOP_EVENTS.selectPet, (petId) => setSelectedId(petId)),
@@ -423,6 +438,36 @@ export function PetOverlay() {
           }, duration);
         }
       }),
+      listenDesktop<ConversationEvent>(DESKTOP_EVENTS.conversation, (event) => {
+        const status = statusFromEvent(event);
+        setConversationStatus(status);
+        if (event.type === "started") {
+          setConversationResponse("");
+          stopDesktopMotion();
+          dispatchBehavior("wakeRequested");
+          schedulerRef.current?.notifyActivity();
+          const activity: AgentActivityEvent = { source: "codex", activity: "thinking", timestamp: Date.now() };
+          agentActivityEngineRef.current.accept(activity);
+          setAgentEvent(activity);
+        } else if (event.type === "text") {
+          setConversationResponse(event.text ?? "");
+          const activity: AgentActivityEvent = { source: "codex", activity: "talking", timestamp: Date.now() };
+          agentActivityEngineRef.current.accept(activity);
+          setAgentEvent(activity);
+        } else {
+          if (event.type === "error") setConversationResponse(event.text ?? "Pet 暫時無法回答。");
+          const activity: AgentActivityEvent = { source: "codex", activity: event.type === "error" ? "error" : "success", timestamp: Date.now() };
+          agentActivityEngineRef.current.accept(activity);
+          setAgentEvent(activity);
+          if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
+          agentActivityTimerRef.current = window.setTimeout(() => {
+            agentActivityEngineRef.current.clear();
+            setAgentEvent(null);
+            setConversationStatus("idle");
+            schedulerRef.current?.notifyActivity();
+          }, AGENT_REACTION_DURATION_MS);
+        }
+      }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
   }, [dispatchBehavior, showSpeech, startReaction, stopDesktopMotion]);
@@ -440,16 +485,20 @@ export function PetOverlay() {
 
   useEffect(() => {
     if (!selectedPackage) return;
+    void resetPetConversation();
     stopDesktopMotion();
     localStorage.setItem(DESKTOP_STORAGE.petId, selectedPackage.manifest.id);
     const renderer = new SpriteRenderer();
     rendererRef.current = renderer;
     void renderer.load(selectedPackage).then(() => renderer.play("idle"));
-      behaviorEngineRef.current.clear();
+    behaviorEngineRef.current.clear();
     agentActivityEngineRef.current.clear();
     if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
     agentActivityTimerRef.current = null;
     setAgentEvent(null);
+    setConversationOpen(false);
+    setConversationResponse("");
+    setConversationStatus("idle");
     setBehaviorState("idle");
     schedulerRef.current?.notifyActivity();
     lastWindowSnapshotRef.current = null;
@@ -713,10 +762,8 @@ export function PetOverlay() {
     lastWindowFeetXRef.current = null;
 
     if (!isDesktopRuntime()) {
-      if (region === "head") {
-        startReaction("happy");
-        showSpeech(SPEECH.head);
-      }
+      setConversationOpen(true);
+      setSpeech(null);
       dispatchBehavior("dragEnded");
       return;
     }
@@ -732,9 +779,9 @@ export function PetOverlay() {
       await getCurrentWindow().startDragging();
     } finally {
       if (activeGestureRef.current === gesture) {
-        if (gesture.region === "head" && !gesture.moved) {
-          startReaction("happy");
-          showSpeech(SPEECH.head);
+        if (!gesture.moved) {
+          setConversationOpen(true);
+          setSpeech(null);
         }
         activeGestureRef.current = null;
         dispatchBehavior("dragEnded");
@@ -769,6 +816,32 @@ export function PetOverlay() {
           onPointerUp={() => undefined}
         />
       </div>
+      {conversationOpen && (
+        <PetConversationCard
+          petName={selectedPackage.manifest.name}
+          response={conversationResponse}
+          status={conversationStatus}
+          runtimeAvailable={runtimeAvailable}
+          onClose={() => setConversationOpen(false)}
+          onSend={async (message) => {
+            try {
+              setConversationStatus("thinking");
+              await startPetConversation(message, selectedPackage.manifest.name);
+            } catch (error) {
+              setConversationStatus("error");
+              setConversationResponse(String(error));
+            }
+          }}
+          onStop={async () => {
+            await stopPetConversation();
+            agentActivityEngineRef.current.clear();
+            setAgentEvent(null);
+            setConversationStatus("idle");
+            setConversationResponse("已停止。");
+            schedulerRef.current?.notifyActivity();
+          }}
+        />
+      )}
       {debug && (
         <button className="overlay-facing" onClick={() => setFacing(facing === "left" ? "right" : "left")}>
           facing: {facing}

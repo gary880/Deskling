@@ -403,6 +403,40 @@ button { color: inherit; }
 
 .pet-overlay__avatar:active { cursor: grabbing; }
 
+.pet-conversation {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 20;
+  width: min(292px, calc(100% - 16px));
+  padding: 10px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(102, 91, 76, .24);
+  border-radius: 14px 14px 14px 5px;
+  background: rgba(255, 251, 243, .97);
+  box-shadow: 0 12px 32px rgba(48, 42, 34, .2);
+  color: var(--ink);
+  user-select: text;
+}
+.pet-conversation header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.pet-conversation header div { display: flex; align-items: center; gap: 6px; }
+.pet-conversation header strong { font-size: 11px; }
+.pet-conversation header button { width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: #8d857a; cursor: pointer; }
+.pet-conversation__dot { width: 7px; height: 7px; border-radius: 50%; background: #a7a096; }
+.pet-conversation__dot--thinking, .pet-conversation__dot--talking { background: var(--orange); box-shadow: 0 0 0 3px rgba(229, 119, 63, .12); }
+.pet-conversation__dot--completed { background: #76a16d; }
+.pet-conversation__dot--error { background: #c85e48; }
+.pet-conversation__response { max-height: 82px; min-height: 34px; overflow-y: auto; color: #4f4a43; font-size: 10px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pet-conversation__response i { display: inline-block; width: 5px; height: 11px; margin-left: 2px; vertical-align: -2px; background: var(--orange); animation: conversation-caret 800ms steps(1) infinite; }
+.pet-conversation form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
+.pet-conversation textarea { min-height: 42px; resize: none; padding: 7px 8px; border: 1px solid #d9d0c4; border-radius: 8px; outline: 0; background: #fff; color: var(--ink); font: 400 10px/1.4 inherit; }
+.pet-conversation textarea:focus { border-color: #d18a63; box-shadow: 0 0 0 2px rgba(209, 138, 99, .12); }
+.pet-conversation form button { align-self: stretch; min-width: 48px; border: 0; border-radius: 8px; background: var(--orange); color: white; font-size: 9px; font-weight: 800; cursor: pointer; }
+.pet-conversation form button:disabled { opacity: .45; cursor: default; }
+.pet-conversation form .pet-conversation__stop { background: #8d8176; }
+.pet-conversation > small { display: block; margin-top: 5px; color: #989083; font: 400 7px/1 "SFMono-Regular", Consolas, monospace; text-align: right; }
+@keyframes conversation-caret { 50% { opacity: 0; } }
+
 .overlay-facing {
   position: absolute;
   right: 8px;
