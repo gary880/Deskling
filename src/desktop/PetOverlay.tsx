@@ -26,7 +26,8 @@ import {
 import { SpriteAvatar } from "../components/SpriteAvatar";
 import { PetConversationCard } from "../components/PetConversationCard";
 import { statusFromEvent, type ConversationEvent, type ConversationStatus } from "../agent/conversation";
-import type { Facing, HitRegion, Point } from "../domain/avatar";
+import type { Facing, HitRegion, PetPersonalityOverride, Point } from "../domain/avatar";
+import { composePetInstructions, effectivePersonality } from "../domain/personality";
 import { usePetCatalog } from "../hooks/usePetCatalog";
 import { SpriteRenderer } from "../renderers/SpriteRenderer";
 import {
@@ -35,6 +36,7 @@ import {
   agentRuntimeAvailable,
   isDesktopRuntime,
   listenDesktop,
+  loadPetPersonality,
   readBooleanSetting,
   readNumberSetting,
   resetPetConversation,
@@ -114,6 +116,7 @@ export function PetOverlay() {
   const [conversationResponse, setConversationResponse] = useState("");
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
+  const [personalityOverrides, setPersonalityOverrides] = useState<PetPersonalityOverride>({});
   const [autonomySettings, setAutonomySettings] = useState<AutonomySettings>(() => ({
     enabled: readBooleanSetting(
       DESKTOP_STORAGE.autonomousBehavior,
@@ -468,9 +471,12 @@ export function PetOverlay() {
           }, AGENT_REACTION_DURATION_MS);
         }
       }),
+      listenDesktop<{ petId: string; settings: PetPersonalityOverride }>(DESKTOP_EVENTS.personalityChanged, (event) => {
+        if (event.petId === selectedPackage?.manifest.id) setPersonalityOverrides(event.settings);
+      }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [dispatchBehavior, showSpeech, startReaction, stopDesktopMotion]);
+  }, [dispatchBehavior, selectedPackage?.manifest.id, showSpeech, startReaction, stopDesktopMotion]);
 
   useEffect(() => {
     if (behaviorState !== "idle") return;
@@ -504,7 +510,10 @@ export function PetOverlay() {
     lastWindowSnapshotRef.current = null;
     lastWindowFeetXRef.current = null;
     setAnimation("idle");
-    showSpeech(`嗨，我是 ${selectedPackage.manifest.name}。`);
+    void loadPetPersonality(selectedPackage.manifest.id).then((settings) => {
+      setPersonalityOverrides(settings);
+      showSpeech(`嗨，我是 ${effectivePersonality(selectedPackage.manifest, settings).nickname ?? selectedPackage.manifest.name}。`);
+    });
   }, [selectedPackage, showSpeech, stopDesktopMotion]);
 
   useEffect(() => {
@@ -818,7 +827,7 @@ export function PetOverlay() {
       </div>
       {conversationOpen && (
         <PetConversationCard
-          petName={selectedPackage.manifest.name}
+          petName={effectivePersonality(selectedPackage.manifest, personalityOverrides).nickname ?? selectedPackage.manifest.name}
           response={conversationResponse}
           status={conversationStatus}
           runtimeAvailable={runtimeAvailable}
@@ -826,7 +835,8 @@ export function PetOverlay() {
           onSend={async (message) => {
             try {
               setConversationStatus("thinking");
-              await startPetConversation(message, selectedPackage.manifest.name);
+              const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
+              await startPetConversation(message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides));
             } catch (error) {
               setConversationStatus("error");
               setConversationResponse(String(error));

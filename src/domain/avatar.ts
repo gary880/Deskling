@@ -17,6 +17,28 @@ export interface Rect {
   height: number;
 }
 
+export type PreferredLanguage = "auto" | "zh-TW" | "en" | "ja";
+
+export interface PetPersonalityTraits {
+  warmth: number;
+  energy: number;
+  humor: number;
+  directness: number;
+  verbosity: number;
+}
+
+export interface PetPersonality {
+  nickname?: string;
+  traits: PetPersonalityTraits;
+  speakingStyle?: string;
+  preferredLanguage: PreferredLanguage;
+  customInstructions?: string;
+}
+
+export type PetPersonalityOverride = Partial<Omit<PetPersonality, "traits">> & {
+  traits?: Partial<PetPersonalityTraits>;
+};
+
 export interface PetManifest {
   schemaVersion: 1;
   id: string;
@@ -32,6 +54,7 @@ export interface PetManifest {
   anchors: Record<AnchorName, [number, number]>;
   hitboxes: Record<HitRegion, Rect>;
   sounds?: Partial<Record<string, string>>;
+  personality?: PetPersonalityOverride;
 }
 
 export interface PetPackage {

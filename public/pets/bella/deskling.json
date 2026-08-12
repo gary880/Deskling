@@ -3,6 +3,11 @@
   "id": "bella",
   "name": "Bella",
   "author": "Community asset",
+  "personality": {
+    "traits": { "warmth": 70, "energy": 45, "humor": 35, "directness": 60, "verbosity": 40 },
+    "speakingStyle": "沉穩、親切，像可靠的工作夥伴。",
+    "preferredLanguage": "auto"
+  },
   "renderer": {
     "type": "sprite",
     "asset": "spritesheet.webp",

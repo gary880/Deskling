@@ -1,4 +1,5 @@
 import type { PetManifest, Rect } from "./avatar";
+import { sanitizePersonalityOverride } from "./personality";
 
 const CORE_ANIMATIONS = ["idle", "walk", "sleep", "thinking", "talking", "happy"];
 const ANCHORS = ["feet", "head", "speechBubble"] as const;
@@ -106,6 +107,23 @@ export function validateManifest(
     const rect = hitboxes[name];
     if (!isObject(rect) || !rectWithinFrame(rect as unknown as Rect, frameWidth, frameHeight)) {
       issues.push(`hitbox ${name} must be inside the frame`);
+    }
+  }
+
+  if (value.personality !== undefined) {
+    if (!isObject(value.personality)) issues.push("personality must be an object");
+    else {
+      const sanitized = sanitizePersonalityOverride(value.personality);
+      const rawTraits = isObject(value.personality.traits) ? value.personality.traits : {};
+      for (const key of ["warmth", "energy", "humor", "directness", "verbosity"] as const) {
+        if (rawTraits[key] !== undefined &&
+          (typeof rawTraits[key] !== "number" || rawTraits[key] < 0 || rawTraits[key] > 100)) {
+          issues.push(`personality.traits.${key} must be between 0 and 100`);
+        }
+      }
+      if (value.personality.preferredLanguage !== undefined && !sanitized.preferredLanguage) {
+        issues.push("personality.preferredLanguage is invalid");
+      }
     }
   }
 

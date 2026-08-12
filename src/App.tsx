@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SpriteAvatar } from "./components/SpriteAvatar";
+import { PersonalitySettings } from "./components/PersonalitySettings";
+import type { ConversationEvent } from "./agent/conversation";
 import {
   DEFAULT_AUTONOMY_SETTINGS,
   type AutonomySettings,
@@ -28,7 +30,9 @@ import {
   readNumberSetting,
   removeInstalledPet,
   reportAgentActivity,
+  resetPetConversation,
   showPetWindow,
+  startPetConversation,
   writeBooleanSetting,
   writeNumberSetting,
 } from "./desktop/bridge";
@@ -73,6 +77,8 @@ export function App() {
   const [facing, setFacing] = useState<Facing>("right");
   const [debug, setDebug] = useState(false);
   const [speech, setSpeech] = useState<string | null>("點一下舞台，我會走過去。");
+  const [personalityPreview, setPersonalityPreview] = useState("");
+  const [personalityPreviewBusy, setPersonalityPreviewBusy] = useState(false);
   const [positionX, setPositionX] = useState(420);
   const [clickThrough, setClickThrough] = useState(() =>
     readBooleanSetting(DESKTOP_STORAGE.clickThrough, false),
@@ -196,9 +202,25 @@ export function App() {
           }, AGENT_REACTION_DURATION_MS);
         }
       }),
+      listenDesktop<ConversationEvent>(DESKTOP_EVENTS.conversation, (event) => {
+        if (!personalityPreviewBusy) return;
+        if (event.type === "text" && event.text) setPersonalityPreview(event.text);
+        if (event.type === "completed" || event.type === "error") {
+          if (event.type === "error" && event.text) setPersonalityPreview(event.text);
+          setPersonalityPreviewBusy(false);
+          void resetPetConversation();
+        }
+      }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [showSpeech]);
+  }, [showSpeech, personalityPreviewBusy]);
+
+  const previewPersonality = async (name: string, instructions: string) => {
+    setPersonalityPreview("");
+    setPersonalityPreviewBusy(true);
+    try { await startPetConversation("今天工作有點累。", name, instructions); }
+    catch (error) { setPersonalityPreview(String(error)); setPersonalityPreviewBusy(false); }
+  };
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -528,6 +550,10 @@ export function App() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="panel-section">
+            <PersonalitySettings manifest={manifest} preview={personalityPreview} previewBusy={personalityPreviewBusy} onPreview={previewPersonality} />
           </div>
 
           <div className="panel-section">

@@ -437,6 +437,29 @@ button { color: inherit; }
 .pet-conversation > small { display: block; margin-top: 5px; color: #989083; font: 400 7px/1 "SFMono-Regular", Consolas, monospace; text-align: right; }
 @keyframes conversation-caret { 50% { opacity: 0; } }
 
+.personality-settings { display: grid; gap: 12px; }
+.personality-field { display: grid; gap: 6px; color: #5d554b; font-size: 11px; font-weight: 700; }
+.personality-field input, .personality-field select, .personality-field textarea { width: 100%; box-sizing: border-box; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfa; color: var(--ink); font: 400 11px/1.45 inherit; outline: none; }
+.personality-field textarea { resize: vertical; }
+.personality-field input:focus, .personality-field select:focus, .personality-field textarea:focus { border-color: #d18a63; box-shadow: 0 0 0 2px rgba(209, 138, 99, .1); }
+.personality-trait { display: grid; gap: 3px; }
+.personality-trait > span, .personality-trait > small { display: flex; justify-content: space-between; align-items: center; }
+.personality-trait strong { color: #5d554b; font-size: 10px; }
+.personality-trait b { color: var(--orange); font: 700 9px/1 "SFMono-Regular", Consolas, monospace; }
+.personality-trait small { color: #9a9185; font-size: 8px; }
+.personality-trait small i { font-style: normal; }
+.personality-trait input { width: 100%; accent-color: var(--orange); }
+.personality-advanced summary { color: #777064; font-size: 10px; cursor: pointer; }
+.personality-advanced .personality-field { margin-top: 9px; }
+.personality-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.personality-actions button { min-height: 34px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfa; color: #6d6257; font-size: 9px; font-weight: 750; cursor: pointer; }
+.personality-actions button:last-child { border-color: var(--orange); background: var(--orange); color: white; }
+.personality-actions button:disabled { opacity: .5; cursor: default; }
+.personality-status { color: #7c8e67; font-size: 8px; text-align: right; }
+.personality-preview { padding: 9px; border-radius: 9px; background: #f7f1e8; }
+.personality-preview small { color: #9a9185; font-size: 8px; }
+.personality-preview p { margin: 5px 0 0; color: #554d44; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
+
 .overlay-facing {
   position: absolute;
   right: 8px;

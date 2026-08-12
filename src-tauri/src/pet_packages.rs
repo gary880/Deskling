@@ -37,6 +37,8 @@ struct ManifestRef {
     hitboxes: Value,
     #[serde(default)]
     sounds: Option<Value>,
+    #[serde(default)]
+    personality: Option<Value>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -228,6 +230,45 @@ fn validate_manifest(raw: &Value, root: &Path) -> Result<String, String> {
             "Invalid deskling.json: animations, anchors, and hitboxes must be non-empty objects"
                 .into(),
         );
+    }
+    if let Some(personality) = &manifest.personality {
+        let object = personality
+            .as_object()
+            .ok_or_else(|| "Invalid deskling.json: personality must be an object".to_string())?;
+        if let Some(traits) = object.get("traits") {
+            let traits = traits.as_object().ok_or_else(|| {
+                "Invalid deskling.json: personality.traits must be an object".to_string()
+            })?;
+            for key in ["warmth", "energy", "humor", "directness", "verbosity"] {
+                if let Some(value) = traits.get(key) {
+                    let number = value.as_f64().ok_or_else(|| {
+                        format!("Invalid deskling.json: personality.traits.{key} must be a number")
+                    })?;
+                    if !(0.0..=100.0).contains(&number) {
+                        return Err(format!("Invalid deskling.json: personality.traits.{key} must be between 0 and 100"));
+                    }
+                }
+            }
+        }
+        if let Some(language) = object.get("preferredLanguage").and_then(Value::as_str) {
+            if !matches!(language, "auto" | "zh-TW" | "en" | "ja") {
+                return Err(
+                    "Invalid deskling.json: personality.preferredLanguage is invalid".into(),
+                );
+            }
+        }
+        for (key, limit) in [("speakingStyle", 500), ("customInstructions", 2_000)] {
+            if let Some(value) = object.get(key) {
+                let text = value.as_str().ok_or_else(|| {
+                    format!("Invalid deskling.json: personality.{key} must be a string")
+                })?;
+                if text.chars().count() > limit {
+                    return Err(format!(
+                        "Invalid deskling.json: personality.{key} is too long"
+                    ));
+                }
+            }
+        }
     }
     let asset = safe_relative_path(&manifest.renderer.asset).ok_or_else(|| {
         "Invalid deskling.json: renderer.asset must be a safe relative path".to_string()

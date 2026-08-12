@@ -6,6 +6,7 @@ use tauri::{
 
 mod agent_runtime;
 mod desktop_world;
+mod personality;
 mod pet_packages;
 
 const EVENT_SELECT_PET: &str = "deskling-select-pet";
@@ -114,8 +115,9 @@ fn start_pet_conversation(
     state: tauri::State<agent_runtime::AgentRuntimeState>,
     message: String,
     pet_name: String,
+    pet_instructions: String,
 ) -> Result<String, String> {
-    agent_runtime::start(app, &state, message, pet_name)
+    agent_runtime::start(app, &state, message, pet_name, pet_instructions)
 }
 
 #[tauri::command]
@@ -130,6 +132,28 @@ fn reset_pet_conversation(
     state: tauri::State<agent_runtime::AgentRuntimeState>,
 ) -> Result<(), String> {
     agent_runtime::reset(&state)
+}
+
+#[tauri::command]
+fn load_pet_personality(
+    app: tauri::AppHandle,
+    pet_id: String,
+) -> Result<serde_json::Value, String> {
+    personality::load(&app, &pet_id)
+}
+
+#[tauri::command]
+fn save_pet_personality(
+    app: tauri::AppHandle,
+    pet_id: String,
+    settings: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    personality::save(&app, &pet_id, settings)
+}
+
+#[tauri::command]
+fn reset_pet_personality(app: tauri::AppHandle, pet_id: String) -> Result<(), String> {
+    personality::reset(&app, &pet_id)
 }
 
 #[tauri::command]
@@ -351,7 +375,10 @@ pub fn run() {
             agent_runtime_available,
             start_pet_conversation,
             stop_pet_conversation,
-            reset_pet_conversation
+            reset_pet_conversation,
+            load_pet_personality,
+            save_pet_personality,
+            reset_pet_personality
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
 import type { ConversationEvent } from "../agent/conversation";
+import type { PetPersonalityOverride } from "../domain/avatar";
 
 export const DESKTOP_EVENTS = {
   selectPet: "deskling-select-pet",
@@ -22,6 +23,7 @@ export const DESKTOP_EVENTS = {
   petCatalogChanged: "deskling-pet-catalog-changed",
   agentActivity: "deskling-agent-activity",
   conversation: "deskling-conversation-event",
+  personalityChanged: "deskling-personality-changed",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -89,9 +91,30 @@ export async function agentRuntimeAvailable(): Promise<boolean> {
   return invoke<boolean>("agent_runtime_available");
 }
 
-export async function startPetConversation(message: string, petName: string): Promise<string> {
+export async function startPetConversation(message: string, petName: string, petInstructions = ""): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_pet_conversation", { message, petName });
+  return invoke<string>("start_pet_conversation", { message, petName, petInstructions });
+}
+
+export async function loadPetPersonality(petId: string): Promise<PetPersonalityOverride> {
+  if (!isDesktopRuntime()) return {};
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<PetPersonalityOverride>("load_pet_personality", { petId });
+}
+
+export async function savePetPersonality(petId: string, settings: PetPersonalityOverride): Promise<PetPersonalityOverride> {
+  if (!isDesktopRuntime()) return settings;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const saved = await invoke<PetPersonalityOverride>("save_pet_personality", { petId, settings });
+  await emitTo("pet", DESKTOP_EVENTS.personalityChanged, { petId, settings: saved });
+  return saved;
+}
+
+export async function resetPetPersonality(petId: string): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("reset_pet_personality", { petId });
+  await emitTo("pet", DESKTOP_EVENTS.personalityChanged, { petId, settings: {} });
 }
 
 export async function stopPetConversation(): Promise<void> {
