@@ -93,6 +93,7 @@ button { color: inherit; }
 .control-panel {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   padding: 24px 18px 18px;
   border-right: 1px solid var(--line);
   background: #f5f1e9;
@@ -169,15 +170,40 @@ button { color: inherit; }
 .debug-toggle input:checked + i::after { transform: translateX(15px); }
 .debug-toggle input:disabled + i { opacity: .45; }
 
-.window-awareness-settings {
+.window-awareness-settings,
+.behavior-settings {
   margin-bottom: 8px;
   padding: 12px 0 8px;
   border: 1px solid #ded5c8;
   border-radius: 12px;
   background: rgba(255, 255, 255, .38);
 }
-.window-awareness-settings .eyebrow { margin-bottom: 6px; padding: 0 6px; }
-.window-awareness-settings .debug-toggle:first-of-type { border-top: 0; }
+.window-awareness-settings .eyebrow,
+.behavior-settings .eyebrow { margin-bottom: 6px; padding: 0 6px; }
+.window-awareness-settings .debug-toggle:first-of-type,
+.behavior-settings .debug-toggle:first-of-type { border-top: 0; }
+.select-setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-top: 1px solid var(--line);
+}
+.select-setting span strong,
+.select-setting span small { display: block; }
+.select-setting span strong { font-size: 11px; }
+.select-setting span small { margin-top: 3px; color: var(--muted); font: 400 8px/1 "SFMono-Regular", Consolas, monospace; }
+.select-setting select {
+  max-width: 86px;
+  padding: 5px 6px;
+  border: 1px solid #d6cec1;
+  border-radius: 6px;
+  background: #fffaf2;
+  color: #5b554c;
+  font-size: 9px;
+}
+.select-setting select:disabled { opacity: .45; }
 .permission-status {
   display: grid;
   grid-template-columns: 1fr auto;

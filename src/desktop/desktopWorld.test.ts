@@ -3,6 +3,7 @@ import {
   desktopFloorFeetPosition,
   feetAnchorOffset,
   windowSnapshotChanged,
+  windowRoamFeetTarget,
   windowTopFeetPosition,
   type DesktopWindowSnapshot,
   type FeetAnchorMetrics,
@@ -85,5 +86,12 @@ describe("windowSnapshotChanged", () => {
       ...snapshot,
       bounds: { ...snapshot.bounds, width: snapshot.bounds.width + 3 },
     })).toBe(true);
+  });
+});
+
+describe("windowRoamFeetTarget", () => {
+  it("keeps autonomous roaming on the active window top edge", () => {
+    expect(windowRoamFeetTarget(snapshot, -1200)).toBe(-424);
+    expect(windowRoamFeetTarget(snapshot, -500)).toBe(-1376);
   });
 });

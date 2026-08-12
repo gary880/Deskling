@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SpriteAvatar } from "./components/SpriteAvatar";
+import {
+  DEFAULT_AUTONOMY_SETTINGS,
+  type AutonomySettings,
+  type SleepAfterMinutes,
+} from "./behavior/AutonomousBehaviorScheduler";
 import type { Facing, HitRegion, Point } from "./domain/avatar";
 import { resolveAnimation } from "./domain/fallback";
 import {
@@ -10,8 +15,10 @@ import {
   isDesktopRuntime,
   listenDesktop,
   readBooleanSetting,
+  readNumberSetting,
   showPetWindow,
   writeBooleanSetting,
+  writeNumberSetting,
 } from "./desktop/bridge";
 import {
   getAccessibilityPermissionStatus,
@@ -40,6 +47,7 @@ const SPEECH: Record<string, string> = {
   happy: "太好啦！",
   head: "嘿嘿，好癢。",
 };
+const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 
 export function App() {
   const { packages, error: catalogError } = usePetCatalog();
@@ -68,6 +76,25 @@ export function App() {
   );
   const [permissionStatus, setPermissionStatus] = useState<AccessibilityPermissionStatus>(
     isDesktopRuntime() ? "denied" : "unsupported",
+  );
+  const [autonomousBehavior, setAutonomousBehavior] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.autonomousBehavior, DEFAULT_AUTONOMY_SETTINGS.enabled),
+  );
+  const [allowRoaming, setAllowRoaming] = useState(() =>
+    readBooleanSetting(DESKTOP_STORAGE.allowRoaming, DEFAULT_AUTONOMY_SETTINGS.allowRoaming),
+  );
+  const [sleepAfterMinutes, setSleepAfterMinutes] = useState<SleepAfterMinutes>(() =>
+    readNumberSetting(
+      DESKTOP_STORAGE.sleepAfterMinutes,
+      SLEEP_AFTER_OPTIONS,
+      DEFAULT_AUTONOMY_SETTINGS.sleepAfterMinutes,
+    ),
+  );
+  const [wakeOnWindowChange, setWakeOnWindowChange] = useState(() =>
+    readBooleanSetting(
+      DESKTOP_STORAGE.wakeOnWindowChange,
+      DEFAULT_AUTONOMY_SETTINGS.wakeOnWindowChange,
+    ),
   );
   const stageRef = useRef<HTMLDivElement>(null);
   const dragPointerRef = useRef<number | null>(null);
@@ -256,6 +283,41 @@ export function App() {
     void emitToPet(DESKTOP_EVENTS.desktopFloorFallback, enabled);
   };
 
+  const emitAutonomySettings = (overrides: Partial<AutonomySettings> = {}) => {
+    const settings = {
+      enabled: autonomousBehavior,
+      allowRoaming,
+      sleepAfterMinutes,
+      wakeOnWindowChange,
+      ...overrides,
+    };
+    void emitToPet(DESKTOP_EVENTS.autonomySettings, settings);
+  };
+
+  const updateAutonomousBehavior = (enabled: boolean) => {
+    setAutonomousBehavior(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.autonomousBehavior, enabled);
+    emitAutonomySettings({ enabled });
+  };
+
+  const updateAllowRoaming = (enabled: boolean) => {
+    setAllowRoaming(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.allowRoaming, enabled);
+    emitAutonomySettings({ allowRoaming: enabled });
+  };
+
+  const updateSleepAfterMinutes = (minutes: SleepAfterMinutes) => {
+    setSleepAfterMinutes(minutes);
+    writeNumberSetting(DESKTOP_STORAGE.sleepAfterMinutes, minutes);
+    emitAutonomySettings({ sleepAfterMinutes: minutes });
+  };
+
+  const updateWakeOnWindowChange = (enabled: boolean) => {
+    setWakeOnWindowChange(enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.wakeOnWindowChange, enabled);
+    emitAutonomySettings({ wakeOnWindowChange: enabled });
+  };
+
   const handleAccessibilityAction = async () => {
     const status = await requestAccessibilityPermission();
     setPermissionStatus(status);
@@ -388,6 +450,65 @@ export function App() {
           </div>
 
           <div className="panel-section panel-section--bottom">
+            <div className="behavior-settings">
+              <p className="eyebrow">AUTONOMY</p>
+              <label className="debug-toggle">
+                <span>
+                  <strong>自主行為</strong>
+                  <small>Autonomous behavior</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={autonomousBehavior}
+                  disabled={!isDesktopRuntime()}
+                  onChange={(event) => updateAutonomousBehavior(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+              <label className="debug-toggle">
+                <span>
+                  <strong>允許散步</strong>
+                  <small>Allow roaming</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={allowRoaming}
+                  disabled={!isDesktopRuntime() || !autonomousBehavior}
+                  onChange={(event) => updateAllowRoaming(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+              <label className="select-setting">
+                <span>
+                  <strong>自動睡眠</strong>
+                  <small>Sleep after</small>
+                </span>
+                <select
+                  value={sleepAfterMinutes}
+                  disabled={!isDesktopRuntime() || !autonomousBehavior}
+                  onChange={(event) =>
+                    updateSleepAfterMinutes(Number(event.target.value) as SleepAfterMinutes)}
+                >
+                  <option value={0}>永不</option>
+                  <option value={15}>15 分鐘</option>
+                  <option value={30}>30 分鐘</option>
+                  <option value={60}>60 分鐘</option>
+                </select>
+              </label>
+              <label className="debug-toggle">
+                <span>
+                  <strong>切換視窗時喚醒</strong>
+                  <small>Wake on window change</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={wakeOnWindowChange}
+                  disabled={!isDesktopRuntime() || !autonomousBehavior}
+                  onChange={(event) => updateWakeOnWindowChange(event.target.checked)}
+                />
+                <i aria-hidden="true" />
+              </label>
+            </div>
             <div className="window-awareness-settings">
               <p className="eyebrow">DESKTOP WORLD</p>
               <label className="debug-toggle">

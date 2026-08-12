@@ -2,7 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
-import { BehaviorEngine, type BehaviorSignals, type BehaviorState } from "../behavior/BehaviorEngine";
+import {
+  AutonomousBehaviorScheduler,
+  DEFAULT_AUTONOMY_SETTINGS,
+  type AutonomySettings,
+  type SleepAfterMinutes,
+} from "../behavior/AutonomousBehaviorScheduler";
+import {
+  BehaviorEngine,
+  type BehaviorEvent,
+  type BehaviorState,
+  type SurfaceEvent,
+  type SurfaceState,
+} from "../behavior/BehaviorEngine";
 import { SpriteAvatar } from "../components/SpriteAvatar";
 import type { Facing, HitRegion, Point } from "../domain/avatar";
 import { usePetCatalog } from "../hooks/usePetCatalog";
@@ -13,7 +25,9 @@ import {
   isDesktopRuntime,
   listenDesktop,
   readBooleanSetting,
+  readNumberSetting,
   writeBooleanSetting,
+  writeNumberSetting,
 } from "./bridge";
 import {
   desktopFloorFeetPosition,
@@ -22,6 +36,7 @@ import {
   feetAnchorOffset,
   positionPetWindow,
   windowSnapshotChanged,
+  windowRoamFeetTarget,
   windowTopFeetPosition,
   WINDOW_TRACKING_INTERVAL_MS,
   type AccessibilityPermissionStatus,
@@ -48,6 +63,8 @@ interface ActivePetGesture {
   region: HitRegion;
   moved: boolean;
 }
+
+const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 
 export function PetOverlay() {
   const { packages, error } = usePetCatalog();
@@ -77,14 +94,38 @@ export function PetOverlay() {
     "denied",
   );
   const [behaviorState, setBehaviorState] = useState<BehaviorState>("idle");
+  const [surfaceState, setSurfaceState] = useState<SurfaceState>("manual");
+  const [autonomySettings, setAutonomySettings] = useState<AutonomySettings>(() => ({
+    enabled: readBooleanSetting(
+      DESKTOP_STORAGE.autonomousBehavior,
+      DEFAULT_AUTONOMY_SETTINGS.enabled,
+    ),
+    allowRoaming: readBooleanSetting(
+      DESKTOP_STORAGE.allowRoaming,
+      DEFAULT_AUTONOMY_SETTINGS.allowRoaming,
+    ),
+    sleepAfterMinutes: readNumberSetting(
+      DESKTOP_STORAGE.sleepAfterMinutes,
+      SLEEP_AFTER_OPTIONS,
+      DEFAULT_AUTONOMY_SETTINGS.sleepAfterMinutes,
+    ),
+    wakeOnWindowChange: readBooleanSetting(
+      DESKTOP_STORAGE.wakeOnWindowChange,
+      DEFAULT_AUTONOMY_SETTINGS.wakeOnWindowChange,
+    ),
+  }));
   const rendererRef = useRef(new SpriteRenderer());
   const speechTimerRef = useRef<number | null>(null);
+  const idleVariationTimerRef = useRef<number | null>(null);
+  const reactionTimerRef = useRef<number | null>(null);
   const activeGestureRef = useRef<ActivePetGesture | null>(null);
   const desktopMotionTokenRef = useRef(0);
   const behaviorEngineRef = useRef(new BehaviorEngine());
-  const surfaceModeRef = useRef<"manual" | "window" | "floor">("manual");
+  const schedulerRef = useRef<AutonomousBehaviorScheduler | null>(null);
+  const surfaceModeRef = useRef<SurfaceState>("manual");
   const lastWindowSnapshotRef = useRef<DesktopWindowSnapshot | null>(null);
   const lastWindowFeetXRef = useRef<number | null>(null);
+  const startDesktopWalkRef = useRef<() => Promise<void>>(async () => undefined);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -92,11 +133,11 @@ export function PetOverlay() {
   );
   const scale = selectedPackage?.manifest.id === "bella" ? 0.92 : 1;
 
-  const updateBehaviorSignal = useCallback(
-    (signal: keyof BehaviorSignals, active: boolean): BehaviorState => {
-      const state = behaviorEngineRef.current.setSignal(signal, active);
+  const dispatchBehavior = useCallback(
+    (event: BehaviorEvent): BehaviorState => {
+      const state = behaviorEngineRef.current.dispatch(event);
       setBehaviorState(state);
-      if (state === "dragging" || state === "windowFollowing" || state === "idle") {
+      if (state === "dragging" || state === "idle") {
         setAnimation("idle");
       } else if (state === "roaming") {
         setAnimation("walk");
@@ -108,25 +149,107 @@ export function PetOverlay() {
     [],
   );
 
+  const dispatchSurface = useCallback(
+    (event: SurfaceEvent, fallback = desktopFloorFallback): SurfaceState => {
+      const surface = behaviorEngineRef.current.dispatchSurface(event, fallback);
+      surfaceModeRef.current = surface;
+      setSurfaceState(surface);
+      return surface;
+    },
+    [desktopFloorFallback],
+  );
+
   const showSpeech = useCallback((message: string, duration = 2200) => {
     if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
     setSpeech(message);
     speechTimerRef.current = window.setTimeout(() => setSpeech(null), duration);
   }, []);
   const handleAnimationComplete = useCallback(() => {
-    updateBehaviorSignal("reacting", false);
-  }, [updateBehaviorSignal]);
+    if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
+    reactionTimerRef.current = null;
+    dispatchBehavior("reactionCompleted");
+  }, [dispatchBehavior]);
+
+  const startReaction = useCallback((nextAnimation: string, duration = 4_000) => {
+    dispatchBehavior("reactionStarted");
+    setAnimation(nextAnimation);
+    if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
+    reactionTimerRef.current = window.setTimeout(() => {
+      reactionTimerRef.current = null;
+      dispatchBehavior("reactionCompleted");
+    }, duration);
+  }, [dispatchBehavior]);
 
   const stopDesktopMotion = useCallback(() => {
     desktopMotionTokenRef.current += 1;
-    updateBehaviorSignal("roaming", false);
-  }, [updateBehaviorSignal]);
+    dispatchBehavior("roamCompleted");
+  }, [dispatchBehavior]);
 
   const startDesktopWalk = useCallback(async () => {
-    if (!isDesktopRuntime()) return;
+    if (!isDesktopRuntime() || !selectedPackage) return;
 
     const token = ++desktopMotionTokenRef.current;
     const appWindow = getCurrentWindow();
+    const windowSurface = surfaceModeRef.current === "window"
+      ? lastWindowSnapshotRef.current
+      : null;
+
+    if (windowSurface) {
+      const [windowSize, windowPosition, pixelScale] = await Promise.all([
+        appWindow.innerSize(),
+        appWindow.outerPosition(),
+        appWindow.scaleFactor(),
+      ]);
+      if (token !== desktopMotionTokenRef.current) return;
+      const metrics: FeetAnchorMetrics = {
+        overlayWidth: windowSize.width / pixelScale,
+        overlayHeight: windowSize.height / pixelScale,
+        frameWidth: selectedPackage.manifest.renderer.frameWidth,
+        frameHeight: selectedPackage.manifest.renderer.frameHeight,
+        feet: selectedPackage.manifest.anchors.feet,
+        scale,
+        facing,
+        avatarBottom: 16,
+      };
+      const anchor = feetAnchorOffset(metrics);
+      const currentFeetX = lastWindowFeetXRef.current
+        ?? windowPosition.x / pixelScale + anchor.x;
+      const targetFeetX = windowRoamFeetTarget(windowSurface, currentFeetX);
+      const direction = targetFeetX < currentFeetX ? -1 : 1;
+      const walkFacing: Facing = direction < 0 ? "left" : "right";
+      const walkMetrics = { ...metrics, facing: walkFacing };
+      const walkAnchor = feetAnchorOffset(walkMetrics);
+      const targetX = targetFeetX - walkAnchor.x;
+      const fixedY = windowSurface.bounds.y - walkAnchor.y;
+      const speed = 110;
+      let x = currentFeetX - walkAnchor.x;
+      let previous = performance.now();
+
+      setFacing(walkFacing);
+      if (dispatchBehavior("roamRequested") !== "roaming") return;
+      setSpeech(null);
+
+      const step = async (now: number) => {
+        if (token !== desktopMotionTokenRef.current) return;
+        const deltaSeconds = Math.min((now - previous) / 1000, 0.05);
+        previous = now;
+        x += direction * speed * deltaSeconds;
+        const arrived = direction > 0 ? x >= targetX : x <= targetX;
+        if (arrived) x = targetX;
+        await positionPetWindow({ x, y: fixedY });
+        lastWindowFeetXRef.current = x + walkAnchor.x;
+        if (token !== desktopMotionTokenRef.current) return;
+        if (arrived) {
+          dispatchBehavior("roamCompleted");
+          return;
+        }
+        requestAnimationFrame((next) => void step(next));
+      };
+
+      requestAnimationFrame((now) => void step(now));
+      return;
+    }
+
     const [monitor, initialPosition, windowSize] = await Promise.all([
       currentMonitor(),
       appWindow.outerPosition(),
@@ -147,10 +270,7 @@ export function PetOverlay() {
     let previous = performance.now();
 
     setFacing(direction < 0 ? "left" : "right");
-    if (updateBehaviorSignal("roaming", true) !== "roaming") {
-      updateBehaviorSignal("roaming", false);
-      return;
-    }
+    if (dispatchBehavior("roamRequested") !== "roaming") return;
     setSpeech(null);
 
     const step = async (now: number) => {
@@ -165,30 +285,69 @@ export function PetOverlay() {
       if (token !== desktopMotionTokenRef.current) return;
 
       if (arrived) {
-        updateBehaviorSignal("roaming", false);
-        showSpeech("到了！", 1300);
-        await constrainPetWindow(appWindow);
+        dispatchBehavior("roamCompleted");
+        if (surfaceModeRef.current === "manual") await constrainPetWindow(appWindow);
         return;
       }
       requestAnimationFrame((next) => void step(next));
     };
 
     requestAnimationFrame((now) => void step(now));
-  }, [showSpeech, updateBehaviorSignal]);
+  }, [dispatchBehavior, facing, scale, selectedPackage]);
+
+  startDesktopWalkRef.current = startDesktopWalk;
+
+  useEffect(() => {
+    const scheduler = new AutonomousBehaviorScheduler(autonomySettings, {
+      onIdleVariation: () => {
+        if (behaviorEngineRef.current.state !== "idle") return;
+        setAnimation("thinking");
+        if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
+        idleVariationTimerRef.current = window.setTimeout(() => {
+          idleVariationTimerRef.current = null;
+          if (behaviorEngineRef.current.state === "idle") setAnimation("idle");
+        }, 4_000);
+      },
+      onRoamRequested: () => void startDesktopWalkRef.current(),
+      onSleepRequested: () => {
+        stopDesktopMotion();
+        dispatchBehavior("sleepRequested");
+      },
+      onWakeRequested: () => {
+        stopDesktopMotion();
+        dispatchBehavior("wakeRequested");
+      },
+    });
+    schedulerRef.current = scheduler;
+    scheduler.start();
+    return () => {
+      scheduler.stop();
+      if (schedulerRef.current === scheduler) schedulerRef.current = null;
+    };
+  }, [dispatchBehavior, stopDesktopMotion]); // Settings are applied by the configure effect.
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
     void Promise.all([
       listenDesktop<string>(DESKTOP_EVENTS.selectPet, (petId) => setSelectedId(petId)),
       listenDesktop<string>(DESKTOP_EVENTS.playBehavior, (behavior) => {
+        schedulerRef.current?.notifyActivity();
         if (behavior === "walk") {
-          void startDesktopWalk();
+          dispatchBehavior("reactionCompleted");
+          dispatchBehavior("wakeRequested");
+          void startDesktopWalkRef.current();
           return;
         }
         stopDesktopMotion();
-        updateBehaviorSignal("sleeping", behavior === "sleep");
-        updateBehaviorSignal("reacting", behavior !== "sleep" && behavior !== "idle");
-        if (behavior !== "idle" && behavior !== "sleep") setAnimation(behavior);
+        if (behavior === "sleep") {
+          dispatchBehavior("reactionCompleted");
+          schedulerRef.current?.requestSleep();
+        } else if (behavior === "idle") {
+          dispatchBehavior("reactionCompleted");
+          dispatchBehavior("wakeRequested");
+        } else {
+          startReaction(behavior);
+        }
         showSpeech(SPEECH[behavior] ?? behavior);
       }),
       listenDesktop<boolean>(DESKTOP_EVENTS.debug, (enabled) => setDebug(enabled)),
@@ -228,9 +387,10 @@ export function PetOverlay() {
         DESKTOP_EVENTS.accessibilityStatusChanged,
         setPermissionStatus,
       ),
+      listenDesktop<AutonomySettings>(DESKTOP_EVENTS.autonomySettings, setAutonomySettings),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [showSpeech, startDesktopWalk, stopDesktopMotion, updateBehaviorSignal]);
+  }, [dispatchBehavior, showSpeech, startReaction, stopDesktopMotion]);
 
   useEffect(() => {
     if (!selectedPackage) return;
@@ -241,6 +401,7 @@ export function PetOverlay() {
     void renderer.load(selectedPackage).then(() => renderer.play("idle"));
     behaviorEngineRef.current.clear();
     setBehaviorState("idle");
+    schedulerRef.current?.notifyActivity();
     lastWindowSnapshotRef.current = null;
     lastWindowFeetXRef.current = null;
     setAnimation("idle");
@@ -275,6 +436,15 @@ export function PetOverlay() {
     writeBooleanSetting(DESKTOP_STORAGE.followActiveWindow, followActiveWindow);
     writeBooleanSetting(DESKTOP_STORAGE.desktopFloorFallback, desktopFloorFallback);
   }, [desktopFloorFallback, followActiveWindow, windowAware]);
+
+  useEffect(() => {
+    writeBooleanSetting(DESKTOP_STORAGE.autonomousBehavior, autonomySettings.enabled);
+    writeBooleanSetting(DESKTOP_STORAGE.allowRoaming, autonomySettings.allowRoaming);
+    writeNumberSetting(DESKTOP_STORAGE.sleepAfterMinutes, autonomySettings.sleepAfterMinutes);
+    writeBooleanSetting(DESKTOP_STORAGE.wakeOnWindowChange, autonomySettings.wakeOnWindowChange);
+    if (!autonomySettings.enabled || !autonomySettings.allowRoaming) stopDesktopMotion();
+    schedulerRef.current?.configure(autonomySettings);
+  }, [autonomySettings, stopDesktopMotion]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -322,9 +492,9 @@ export function PetOverlay() {
       },
       metrics,
     );
-    surfaceModeRef.current = "floor";
+    dispatchSurface("desktopFloorSelected");
     await appWindow.setPosition(new PhysicalPosition(target.x, target.y));
-  }, [facing, scale, selectedPackage]);
+  }, [dispatchSurface, facing, scale, selectedPackage]);
 
   const positionOnWindow = useCallback(async (
     snapshot: DesktopWindowSnapshot,
@@ -350,10 +520,10 @@ export function PetOverlay() {
     const anchor = feetAnchorOffset(metrics);
     const currentFeetX = windowPosition.x / pixelScale + anchor.x;
     const target = windowTopFeetPosition(snapshot, metrics, preferredFeetX ?? currentFeetX);
-    surfaceModeRef.current = "window";
+    dispatchSurface("windowTargetChanged");
     await positionPetWindow(target);
     lastWindowFeetXRef.current = target.x + anchor.x;
-  }, [facing, scale, selectedPackage]);
+  }, [dispatchSurface, facing, scale, selectedPackage]);
 
   useEffect(() => {
     if (!isDesktopRuntime() || !selectedPackage) return;
@@ -366,12 +536,10 @@ export function PetOverlay() {
     const fallback = () => {
       lastWindowSnapshotRef.current = null;
       lastWindowFeetXRef.current = null;
-      updateBehaviorSignal("windowFollowing", false);
+      dispatchSurface("windowTargetLost", desktopFloorFallback);
       if (desktopFloorFallback && !fallbackPlaced) {
         fallbackPlaced = true;
         void positionOnDesktopFloor();
-      } else if (!desktopFloorFallback) {
-        surfaceModeRef.current = "manual";
       }
     };
 
@@ -394,10 +562,16 @@ export function PetOverlay() {
 
         missedSnapshots = 0;
         fallbackPlaced = false;
-        updateBehaviorSignal("windowFollowing", true);
         if (windowSnapshotChanged(lastWindowSnapshotRef.current, snapshot)) {
           stopDesktopMotion();
           const previous = lastWindowSnapshotRef.current;
+          if (
+            !previous ||
+            previous.appId !== snapshot.appId ||
+            previous.monitorId !== snapshot.monitorId
+          ) {
+            schedulerRef.current?.notifyWindowTargetChanged();
+          }
           let preferredFeetX = lastWindowFeetXRef.current;
           if (
             previous &&
@@ -432,7 +606,7 @@ export function PetOverlay() {
     positionOnWindow,
     selectedPackage,
     stopDesktopMotion,
-    updateBehaviorSignal,
+    dispatchSurface,
     windowAware,
   ]);
 
@@ -467,6 +641,8 @@ export function PetOverlay() {
     () => () => {
       desktopMotionTokenRef.current += 1;
       if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
+      if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
+      if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
     },
     [],
   );
@@ -479,18 +655,18 @@ export function PetOverlay() {
     if (!region) return;
 
     stopDesktopMotion();
-    updateBehaviorSignal("dragging", true);
-    surfaceModeRef.current = "manual";
+    schedulerRef.current?.notifyActivity();
+    dispatchBehavior("dragStarted");
+    dispatchSurface("manualPositioned");
     lastWindowSnapshotRef.current = null;
     lastWindowFeetXRef.current = null;
 
     if (!isDesktopRuntime()) {
       if (region === "head") {
-        updateBehaviorSignal("reacting", true);
-        setAnimation("happy");
+        startReaction("happy");
         showSpeech(SPEECH.head);
       }
-      updateBehaviorSignal("dragging", false);
+      dispatchBehavior("dragEnded");
       return;
     }
 
@@ -506,12 +682,11 @@ export function PetOverlay() {
     } finally {
       if (activeGestureRef.current === gesture) {
         if (gesture.region === "head" && !gesture.moved) {
-          updateBehaviorSignal("reacting", true);
-          setAnimation("happy");
+          startReaction("happy");
           showSpeech(SPEECH.head);
         }
         activeGestureRef.current = null;
-        updateBehaviorSignal("dragging", false);
+        dispatchBehavior("dragEnded");
         lastWindowSnapshotRef.current = null;
         lastWindowFeetXRef.current = null;
       }
@@ -525,6 +700,7 @@ export function PetOverlay() {
     <main
       className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}
       data-behavior-state={behaviorState}
+      data-surface-state={surfaceState}
     >
       <div className="pet-overlay__avatar">
         <SpriteAvatar

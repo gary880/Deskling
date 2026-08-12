@@ -102,6 +102,16 @@ export function windowTopFeetPosition(
   };
 }
 
+export function windowRoamFeetTarget(
+  snapshot: DesktopWindowSnapshot,
+  currentFeetX: number,
+): number {
+  const inset = Math.min(WINDOW_EDGE_INSET, snapshot.bounds.width / 2);
+  const left = snapshot.bounds.x + inset;
+  const right = snapshot.bounds.x + snapshot.bounds.width - inset;
+  return currentFeetX < (left + right) / 2 ? right : left;
+}
+
 export function desktopFloorFeetPosition(
   currentX: number,
   workArea: Rect,

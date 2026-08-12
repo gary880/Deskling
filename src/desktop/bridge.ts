@@ -16,6 +16,7 @@ export const DESKTOP_EVENTS = {
   desktopFloorFallback: "deskling-desktop-floor-fallback",
   toggleDesktopFloorFallback: "deskling-toggle-desktop-floor-fallback",
   accessibilityStatusChanged: "deskling-accessibility-status-changed",
+  autonomySettings: "deskling-autonomy-settings",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -26,6 +27,10 @@ export const DESKTOP_STORAGE = {
   windowAware: "deskling.windowAware",
   followActiveWindow: "deskling.followActiveWindow",
   desktopFloorFallback: "deskling.desktopFloorFallback",
+  autonomousBehavior: "deskling.autonomousBehavior",
+  allowRoaming: "deskling.allowRoaming",
+  sleepAfterMinutes: "deskling.sleepAfterMinutes",
+  wakeOnWindowChange: "deskling.wakeOnWindowChange",
 } as const;
 
 export function isDesktopRuntime(): boolean {
@@ -57,5 +62,18 @@ export function readBooleanSetting(key: string, fallback: boolean): boolean {
 }
 
 export function writeBooleanSetting(key: string, value: boolean): void {
+  localStorage.setItem(key, String(value));
+}
+
+export function readNumberSetting<T extends number>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const value = Number(localStorage.getItem(key));
+  return allowed.includes(value as T) ? value as T : fallback;
+}
+
+export function writeNumberSetting(key: string, value: number): void {
   localStorage.setItem(key, String(value));
 }
