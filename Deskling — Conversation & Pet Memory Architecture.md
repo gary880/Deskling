@@ -22,7 +22,7 @@ pet           320 × 300 的透明 Pet overlay
 conversation  預先建立、預設隱藏的透明 sidecar
 ```
 
-Conversation UI 是獨立 native window。Pet window 不會為了顯示對話而 resize，因此開啟、換邊與關閉 sidecar 不應改變 Pet 的螢幕座標。PetOverlay 擁有 conversation runtime state，透過 Tauri events 將 UI state 傳到 ConversationWindow，並接收 send、stop、remember、typing、side 和 close actions。
+Conversation UI 是獨立 native window。Pet window 不會為了顯示對話而 resize，因此開啟、換邊、拖曳與關閉 sidecar 不應改變 Pet 的螢幕座標。Conversation header 可啟動原生 window drag；完成後將位置回報給 PetOverlay，保存成相對 Pet 的偏移，使 Pet 移動時 sidecar 仍會跟隨。左右停靠 action 會清除此偏移。PetOverlay 擁有 conversation runtime state，透過 Tauri events 將 UI state 傳到 ConversationWindow，並接收 send、stop、remember、typing、side、drag 和 close actions。
 
 ## Direct Conversation Flow
 
@@ -160,4 +160,5 @@ cargo fmt --check
 - Memory 受固定 context budget 限制。
 - IME 選字不會送出訊息。
 - Sidecar 開關不 resize 或移動 Pet window。
+- Sidecar 拖曳只改變 conversation offset；Pet 移動時仍保留相對位置。
 - History 與 memory 始終按 Pet ID 隔離。

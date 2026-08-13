@@ -59,7 +59,7 @@ Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `pe
 
 ## Conversation、History 與 Memory
 
-雙擊 Pet 開啟獨立的 Conversation sidecar。sidecar 可切換至 Pet 左側或右側；拖曳 Pet 時會跟隨移動，關閉 sidecar 不會改變 Pet 的位置。一般 Enter 送出、Shift+Enter 換行；中文／日文等 IME 組字與選字期間的 Enter 不會送出訊息。
+雙擊 Pet 開啟獨立的 Conversation sidecar。sidecar 可切換至 Pet 左側或右側，也可拖曳 header 自訂相對位置；拖曳 Pet 時會保留偏移並跟隨移動，按下左右箭頭會恢復標準停靠。關閉 sidecar 不會改變 Pet 的位置。一般 Enter 送出、Shift+Enter 換行；中文／日文等 IME 組字與選字期間的 Enter 不會送出訊息。
 
 Conversation runtime 透過已安裝並登入的 Codex CLI 執行，使用 read-only sandbox 且禁止工具與權限請求。Conversation history 和 Pet memory 是兩種不同資料：
 
@@ -102,6 +102,7 @@ Behavior 與 surface 是兩組獨立狀態：角色可以在 active window 或 D
 - 按住角色的頭部或身體拖曳，即可移動桌面寵物。
 - 短點頭部會播放 `happy` 反應。
 - 雙擊角色會開啟獨立 Conversation sidecar；header 的箭頭可切換左右位置。
+- 拖曳 Conversation header 可自訂對話框位置；再次按左右箭頭可恢復停靠。
 - 從 Control Window 選擇「散步」，寵物會在目前螢幕的可用範圍內水平走動。
 - 開啟 Click-through 後 overlay 不接收滑鼠事件；需從 Control Window 或 menu bar 關閉 Click-through 才能再次拖曳。
 

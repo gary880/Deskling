@@ -49,6 +49,7 @@ export const DESKTOP_STORAGE = {
   sleepAfterMinutes: "deskling.sleepAfterMinutes",
   wakeOnWindowChange: "deskling.wakeOnWindowChange",
   proactiveSettings: "deskling.proactiveSettings",
+  conversationPositionOffset: "deskling.conversationPositionOffset",
   conversationHistorySettings: "deskling.conversationHistorySettings",
   petMemorySettings: "deskling.petMemorySettings",
 } as const;

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ConversationStatus } from "../agent/conversation";
 import { PetConversationCard } from "../components/PetConversationCard";
 import type { PetMemoryCategory } from "../domain/petMemory";
@@ -20,12 +21,16 @@ export type ConversationUiAction =
   | { type: "stop" }
   | { type: "remember"; content: string; category: PetMemoryCategory }
   | { type: "side"; side: "left" | "right" }
+  | { type: "drag-start" }
+  | { type: "drag-end"; position: { x: number; y: number } }
+  | { type: "drag-cancel" }
   | { type: "typing"; typing: boolean };
 
 const EMPTY_STATE: ConversationUiState = { petName: "Pet", response: "", memoryCandidate: "", status: "idle", runtimeAvailable: false, memoryStatus: "", side: "right" };
 
 export function ConversationWindow() {
   const [state, setState] = useState(EMPTY_STATE);
+  const draggingRef = useRef(false);
   useEffect(() => {
     let active = true;
     let unlisten: () => void = () => undefined;
@@ -36,6 +41,21 @@ export function ConversationWindow() {
     return () => { active = false; unlisten(); };
   }, []);
   const action = (payload: ConversationUiAction) => emitToPet(DESKTOP_EVENTS.conversationUiAction, payload);
+  const dragWindow = async () => {
+    if (draggingRef.current) return;
+    draggingRef.current = true;
+    await action({ type: "drag-start" });
+    try {
+      const conversationWindow = getCurrentWindow();
+      await conversationWindow.startDragging();
+      const position = await conversationWindow.outerPosition();
+      await action({ type: "drag-end", position });
+    } catch {
+      await action({ type: "drag-cancel" });
+    } finally {
+      draggingRef.current = false;
+    }
+  };
   return <main className="conversation-window-shell"><PetConversationCard
     petName={state.petName} response={state.response} memoryCandidate={state.memoryCandidate}
     side={state.side} status={state.status} runtimeAvailable={state.runtimeAvailable} memoryStatus={state.memoryStatus}
@@ -44,6 +64,7 @@ export function ConversationWindow() {
     onStop={async () => { await action({ type: "stop" }); }}
     onRemember={(content, category) => void action({ type: "remember", content, category })}
     onSideChange={(side) => void action({ type: "side", side })}
+    onWindowDrag={() => void dragWindow()}
     onTypingChange={(typing) => void action({ type: "typing", typing })}
   /></main>;
 }

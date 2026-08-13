@@ -7,7 +7,7 @@ import {
 } from "@tauri-apps/api/window";
 import { DESKTOP_STORAGE } from "./bridge";
 
-interface SavedPosition {
+export interface SavedPosition {
   x: number;
   y: number;
 }
@@ -22,6 +22,40 @@ export interface WorkAreaBounds {
 interface WindowDimensions {
   width: number;
   height: number;
+}
+
+export type ConversationSide = "left" | "right";
+
+export function relativeWindowOffset(
+  childPosition: SavedPosition,
+  parentPosition: SavedPosition,
+): SavedPosition {
+  return {
+    x: Math.round(childPosition.x - parentPosition.x),
+    y: Math.round(childPosition.y - parentPosition.y),
+  };
+}
+
+export function conversationWindowPosition(
+  petPosition: SavedPosition,
+  petSize: WindowDimensions,
+  conversationSize: WindowDimensions,
+  side: ConversationSide,
+  gap: number,
+  workArea?: WorkAreaBounds,
+  customOffset?: SavedPosition | null,
+): SavedPosition {
+  const position = customOffset
+    ? { x: petPosition.x + customOffset.x, y: petPosition.y + customOffset.y }
+    : {
+        x: side === "left"
+          ? petPosition.x - conversationSize.width - gap
+          : petPosition.x + petSize.width + gap,
+        y: petPosition.y + (petSize.height - conversationSize.height) / 2,
+      };
+  return workArea
+    ? clampPositionToWorkArea(position, conversationSize, workArea)
+    : { x: Math.round(position.x), y: Math.round(position.y) };
 }
 
 function parseSavedPosition(): SavedPosition | null {

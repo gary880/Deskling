@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { shouldSubmitConversationKey, type ConversationStatus } from "../agent/conversation";
 import type { PetMemoryCategory } from "../domain/petMemory";
 
@@ -8,6 +8,7 @@ interface PetConversationCardProps {
   memoryCandidate?: string;
   side?: "left" | "right";
   onSideChange?: (side: "left" | "right") => void;
+  onWindowDrag?: () => void;
   status: ConversationStatus;
   runtimeAvailable: boolean;
   onClose: () => void;
@@ -20,7 +21,7 @@ interface PetConversationCardProps {
 }
 
 export function PetConversationCard({
-  petName, response, memoryCandidate, side = "left", onSideChange, status, runtimeAvailable, onClose, onSend, onStop, onRemember, memoryStatus, layoutStatus, onTypingChange,
+  petName, response, memoryCandidate, side = "left", onSideChange, onWindowDrag, status, runtimeAvailable, onClose, onSend, onStop, onRemember, memoryStatus, layoutStatus, onTypingChange,
 }: PetConversationCardProps) {
   const [message, setMessage] = useState("");
   const [memoryDraft, setMemoryDraft] = useState<string | null>(null);
@@ -63,9 +64,17 @@ export function PetConversationCard({
     }
   };
 
+  const beginWindowDrag = (event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || !onWindowDrag) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest("nav")) return;
+    event.preventDefault();
+    onWindowDrag();
+  };
+
   return (
     <section className={`pet-conversation pet-conversation--${side} ${memoryDraft !== null ? "pet-conversation--memory" : ""}`} aria-label={`與 ${petName} 對話`} onPointerDown={(event) => event.stopPropagation()}>
-      <header>
+      <header className={onWindowDrag ? "pet-conversation__drag-handle" : undefined} title={onWindowDrag ? "拖曳以移動對話框" : undefined} onPointerDown={beginWindowDrag}>
         <div><span className={`pet-conversation__dot pet-conversation__dot--${status}`} /><strong>{petName}</strong><small>Codex · read-only</small></div>
         <nav aria-label="對話框位置"><button type="button" aria-label="將對話框移到左側" aria-pressed={side === "left"} onClick={() => onSideChange?.("left")}>←</button><button type="button" aria-label="將對話框移到右側" aria-pressed={side === "right"} onClick={() => onSideChange?.("right")}>→</button><button type="button" aria-label="關閉對話" onClick={onClose}>×</button></nav>
       </header>

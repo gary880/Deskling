@@ -442,6 +442,9 @@ button { color: inherit; }
 .pet-conversation--left { right: auto; left: 18px; transform: translateY(-50%); }
 .pet-conversation--right { right: 18px; left: auto; transform: translateY(-50%); }
 .pet-conversation > header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.pet-conversation > header.pet-conversation__drag-handle { cursor: grab; user-select: none; }
+.pet-conversation > header.pet-conversation__drag-handle:active { cursor: grabbing; }
+.pet-conversation > header.pet-conversation__drag-handle nav { cursor: default; }
 .pet-conversation > header div { display: flex; align-items: center; gap: 6px; }
 .pet-conversation > header strong { font-size: 11px; }
 .pet-conversation > header small { display: inline-flex; height: 11px; align-items: center; color: #aaa196; font: 400 7px/11px "SFMono-Regular", Consolas, monospace; }

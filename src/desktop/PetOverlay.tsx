@@ -78,10 +78,13 @@ import {
   type FeetAnchorMetrics,
 } from "./desktopWorld";
 import {
+  conversationWindowPosition,
   constrainPetWindow,
   horizontalWalkTarget,
   persistPetWindowPosition,
+  relativeWindowOffset,
   restorePetWindowPosition,
+  type SavedPosition,
 } from "./windowPosition";
 
 const SPEECH: Record<string, string> = {
@@ -92,6 +95,20 @@ const SPEECH: Record<string, string> = {
   happy: "太好啦！",
   head: "嘿嘿，好癢。",
 };
+
+function readConversationOffset(): SavedPosition | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(DESKTOP_STORAGE.conversationPositionOffset) ?? "null") as unknown;
+    if (value && typeof value === "object" && "x" in value && "y" in value &&
+      typeof value.x === "number" && Number.isFinite(value.x) &&
+      typeof value.y === "number" && Number.isFinite(value.y)) {
+      return { x: value.x, y: value.y };
+    }
+  } catch {
+    // Invalid layout state falls back to the selected left/right dock.
+  }
+  return null;
+}
 
 interface ActivePetGesture {
   region: HitRegion;
@@ -133,6 +150,7 @@ export function PetOverlay() {
   const [agentEvent, setAgentEvent] = useState<AgentActivityEvent | null>(null);
   const [conversationOpen, setConversationOpen] = useState(false);
   const [conversationSide, setConversationSide] = useState<"left" | "right">(() => localStorage.getItem("deskling.conversationSide") === "right" ? "right" : "left");
+  const [conversationOffset, setConversationOffset] = useState<SavedPosition | null>(readConversationOffset);
   const [conversationResponse, setConversationResponse] = useState("");
   const [lastDirectMessage, setLastDirectMessage] = useState("");
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
@@ -201,6 +219,7 @@ export function PetOverlay() {
   const conversationRequestIdRef = useRef<string | null>(null);
   const conversationSendPendingRef = useRef(false);
   const positionConversationRef = useRef<() => Promise<void>>(async () => undefined);
+  const conversationDraggingRef = useRef(false);
   const conversationOpenRef = useRef(conversationOpen);
   const conversationFocusGraceUntilRef = useRef(0);
   useEffect(() => { conversationOpenRef.current = conversationOpen; }, [conversationOpen]);
@@ -1031,25 +1050,29 @@ export function PetOverlay() {
   };
 
   const positionConversationWindow = useCallback(async () => {
-    if (!isDesktopRuntime()) return;
+    if (!isDesktopRuntime() || conversationDraggingRef.current) return;
     const petWindow = getCurrentWindow();
     const conversationWindow = await WebviewWindow.getByLabel("conversation");
     if (!conversationWindow) return;
     const [petPosition, petSize, conversationSize, monitor] = await Promise.all([
       petWindow.outerPosition(), petWindow.outerSize(), conversationWindow.outerSize(), currentMonitor(),
     ]);
-    const gap = 12 * (monitor?.scaleFactor ?? 1);
-    const workArea = monitor?.workArea;
-    let x = conversationSide === "left"
-      ? petPosition.x - conversationSize.width - gap
-      : petPosition.x + petSize.width + gap;
-    let y = petPosition.y + (petSize.height - conversationSize.height) / 2;
-    if (workArea) {
-      x = Math.min(Math.max(x, workArea.position.x), workArea.position.x + workArea.size.width - conversationSize.width);
-      y = Math.min(Math.max(y, workArea.position.y), workArea.position.y + workArea.size.height - conversationSize.height);
-    }
-    await conversationWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
-  }, [conversationSide]);
+    const target = conversationWindowPosition(
+      petPosition,
+      petSize,
+      conversationSize,
+      conversationSide,
+      12 * (monitor?.scaleFactor ?? 1),
+      monitor ? {
+        x: monitor.workArea.position.x,
+        y: monitor.workArea.position.y,
+        width: monitor.workArea.size.width,
+        height: monitor.workArea.size.height,
+      } : undefined,
+      conversationOffset,
+    );
+    await conversationWindow.setPosition(new PhysicalPosition(target.x, target.y));
+  }, [conversationOffset, conversationSide]);
   positionConversationRef.current = positionConversationWindow;
 
   useEffect(() => {
@@ -1090,7 +1113,40 @@ export function PetOverlay() {
         return;
       }
       if (action.type === "typing") { setUserTyping(action.typing); return; }
-      if (action.type === "side") { localStorage.setItem("deskling.conversationSide", action.side); setConversationSide(action.side); return; }
+      if (action.type === "drag-start") { conversationDraggingRef.current = true; return; }
+      if (action.type === "drag-cancel") { conversationDraggingRef.current = false; return; }
+      if (action.type === "drag-end") {
+        void (async () => {
+          try {
+            const petWindow = getCurrentWindow();
+            const [petPosition, petSize, conversationWindow] = await Promise.all([
+              petWindow.outerPosition(), petWindow.outerSize(), WebviewWindow.getByLabel("conversation"),
+            ]);
+            const offset = relativeWindowOffset(action.position, petPosition);
+            const nextSide = conversationWindow
+              ? action.position.x + (await conversationWindow.outerSize()).width / 2 < petPosition.x + petSize.width / 2 ? "left" : "right"
+              : conversationSide;
+            localStorage.setItem(DESKTOP_STORAGE.conversationPositionOffset, JSON.stringify(offset));
+            localStorage.setItem("deskling.conversationSide", nextSide);
+            setConversationOffset(offset);
+            setConversationSide(nextSide);
+          } catch {
+            conversationDraggingRef.current = false;
+            void positionConversationRef.current();
+          } finally {
+            conversationDraggingRef.current = false;
+          }
+        })();
+        return;
+      }
+      if (action.type === "side") {
+        conversationDraggingRef.current = false;
+        localStorage.removeItem(DESKTOP_STORAGE.conversationPositionOffset);
+        localStorage.setItem("deskling.conversationSide", action.side);
+        setConversationOffset(null);
+        setConversationSide(action.side);
+        return;
+      }
       if (action.type === "stop") {
         conversationSendPendingRef.current = false;
         void stopPetConversation().then(() => { agentActivityEngineRef.current.clear(); setAgentEvent(null); setConversationStatus("idle"); setConversationResponse("已停止。"); schedulerRef.current?.notifyActivity(); });
@@ -1130,7 +1186,7 @@ export function PetOverlay() {
       else value();
     });
     return () => { active = false; unlisten(); };
-  }, [addHistoryEntry, memorySettings.enabled, memorySettings.maxEntries, personalityOverrides, selectedPackage]);
+  }, [addHistoryEntry, conversationSide, memorySettings.enabled, memorySettings.maxEntries, personalityOverrides, selectedPackage]);
 
   if (error) return <div className="overlay-error">{error}</div>;
   if (!selectedPackage) return null;
