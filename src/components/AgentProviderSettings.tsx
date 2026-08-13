@@ -12,7 +12,7 @@ const PROVIDERS: AgentProvider[] = ["codex", "claude-code"];
 export function AgentProviderSettings({ provider, onChange }: AgentProviderSettingsProps) {
   const [statuses, setStatuses] = useState<AgentProviderStatus[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [changing, setChanging] = useState(false);
+  const [changingTo, setChangingTo] = useState<AgentProvider | null>(null);
 
   const refresh = useCallback(async () => {
     if (!isDesktopRuntime()) return;
@@ -24,16 +24,22 @@ export function AgentProviderSettings({ provider, onChange }: AgentProviderSetti
   useEffect(() => { void refresh(); }, [refresh]);
 
   const select = async (next: AgentProvider) => {
-    if (next === provider || changing) return;
-    setChanging(true);
+    if (next === provider || changingTo) return;
+    setChangingTo(next);
+    const minimumLoadingTime = new Promise<void>((resolve) => window.setTimeout(resolve, 180));
     try { await onChange(next); }
-    finally { setChanging(false); }
+    finally {
+      await minimumLoadingTime;
+      setChangingTo(null);
+    }
   };
 
-  return <div className="agent-provider-settings">
+  const displayedProvider = changingTo ?? provider;
+
+  return <div className="agent-provider-settings" aria-busy={changingTo !== null}>
     <div className="agent-provider-settings__heading">
       <div><p className="eyebrow">AI PROVIDER</p><small>使用已登入的 CLI 訂閱，不儲存 API key</small></div>
-      <button type="button" disabled={!isDesktopRuntime() || refreshing} onClick={() => void refresh()}>{refreshing ? "…" : "刷新"}</button>
+      <button type="button" disabled={!isDesktopRuntime() || refreshing || changingTo !== null} onClick={() => void refresh()}>{refreshing ? "…" : "刷新"}</button>
     </div>
     <div className="agent-provider-settings__options">
       {PROVIDERS.map((item) => {
@@ -42,14 +48,17 @@ export function AgentProviderSettings({ provider, onChange }: AgentProviderSetti
         const stateLabel = !status ? "Checking" : ready ? "Ready" : status.installed ? "Login required" : "Not installed";
         return <button
           type="button"
-          className={provider === item ? "active" : ""}
-          aria-pressed={provider === item}
-          disabled={changing || !isDesktopRuntime()}
+          className={displayedProvider === item ? "active" : ""}
+          aria-pressed={displayedProvider === item}
+          aria-busy={changingTo === item}
+          disabled={changingTo !== null || !isDesktopRuntime()}
           key={item}
           onClick={() => void select(item)}
         >
           <span><strong>{AGENT_PROVIDER_LABELS[item]}</strong><i className={ready ? "ready" : ""}>{stateLabel}</i></span>
-          <small>{status?.version ?? (isDesktopRuntime() ? "檢查中…" : "Desktop only")}</small>
+          {changingTo === item
+            ? <small className="agent-provider-settings__switching" role="status">切換中…</small>
+            : <small>{status?.version ?? (isDesktopRuntime() ? "檢查中…" : "Desktop only")}</small>}
         </button>;
       })}
     </div>

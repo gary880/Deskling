@@ -80,11 +80,13 @@ const SPEECH: Record<string, string> = {
 };
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 const AGENT_ACTIVITIES: readonly AgentActivity[] = ["thinking", "talking", "success", "error"];
+type WorkspaceMode = "runtime" | "creator";
 
 export function App() {
   const { packages, error: catalogError, reload: reloadCatalog } = usePetCatalog();
   const [packageStatus, setPackageStatus] = useState<{ kind: "busy" | "success" | "error"; message: string } | null>(null);
-  const [workspaceMode, setWorkspaceMode] = useState<"runtime" | "creator">("runtime");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("runtime");
+  const [pendingWorkspaceMode, setPendingWorkspaceMode] = useState<WorkspaceMode | null>(null);
   const [selectedId, setSelectedId] = useState(
     () => localStorage.getItem(DESKTOP_STORAGE.petId) ?? "mochi",
   );
@@ -145,6 +147,7 @@ export function App() {
   const rendererRef = useRef(new SpriteRenderer());
   const speechTimerRef = useRef<number | null>(null);
   const agentActivityTimerRef = useRef<number | null>(null);
+  const workspaceSwitchTimerRef = useRef<number | null>(null);
 
   const selectedPackage = useMemo(
     () => packages.find((pkg) => pkg.manifest.id === selectedId) ?? packages[0],
@@ -152,6 +155,20 @@ export function App() {
   );
 
   const scale = selectedPackage?.manifest.id === "bella" ? 0.82 : 0.9;
+
+  const switchWorkspaceMode = (nextMode: WorkspaceMode) => {
+    if (nextMode === workspaceMode || pendingWorkspaceMode) return;
+    setPendingWorkspaceMode(nextMode);
+    workspaceSwitchTimerRef.current = window.setTimeout(() => {
+      setWorkspaceMode(nextMode);
+      setPendingWorkspaceMode(null);
+      workspaceSwitchTimerRef.current = null;
+    }, 180);
+  };
+
+  useEffect(() => () => {
+    if (workspaceSwitchTimerRef.current) window.clearTimeout(workspaceSwitchTimerRef.current);
+  }, []);
 
   const showSpeech = useCallback((message: string, duration = 2400) => {
     if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
@@ -552,7 +569,7 @@ export function App() {
   const petBottom = 64 - (manifest.renderer.frameHeight - feet[1]) * scale;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" aria-busy={pendingWorkspaceMode !== null}>
       <header className="topbar">
         <div className="brand-mark" aria-hidden="true">D</div>
         <div>
@@ -561,8 +578,24 @@ export function App() {
         </div>
         <div className="topbar-actions">
           <div className="workspace-switch" role="group" aria-label="Workspace mode">
-            <button className={workspaceMode === "runtime" ? "active" : ""} onClick={() => setWorkspaceMode("runtime")}>Runtime</button>
-            <button className={workspaceMode === "creator" ? "active" : ""} onClick={() => setWorkspaceMode("creator")}>Creator</button>
+            <button
+              type="button"
+              className={(pendingWorkspaceMode ?? workspaceMode) === "runtime" ? "active" : ""}
+              aria-pressed={(pendingWorkspaceMode ?? workspaceMode) === "runtime"}
+              disabled={pendingWorkspaceMode !== null}
+              onClick={() => switchWorkspaceMode("runtime")}
+            >
+              Runtime
+            </button>
+            <button
+              type="button"
+              className={(pendingWorkspaceMode ?? workspaceMode) === "creator" ? "active" : ""}
+              aria-pressed={(pendingWorkspaceMode ?? workspaceMode) === "creator"}
+              disabled={pendingWorkspaceMode !== null}
+              onClick={() => switchWorkspaceMode("creator")}
+            >
+              Creator
+            </button>
           </div>
           {isDesktopRuntime() && (
             <button className="show-pet-button" onClick={() => void showPetWindow()}>顯示寵物</button>
@@ -643,27 +676,29 @@ export function App() {
           </div>
 
           <div className="panel-section">
-            <p className="eyebrow">AGENT ACTIVITY</p>
-            <p className="activity-hint">測試 Codex／Agent 語意動畫與 fallback。</p>
-            <div className="behavior-grid activity-grid">
-              {AGENT_ACTIVITIES.map((activity) => (
-                <button
-                  className={agentActivity === activity ? "active" : ""}
-                  key={activity}
-                  onClick={() => void simulateAgentActivity(activity)}
-                >
-                  <span>{activity === "thinking" ? "思考" : activity === "talking" ? "說話" : activity === "success" ? "完成" : "錯誤"}</span>
-                  <small>{activity}</small>
+            <div className="sidebar-card activity-settings">
+              <p className="eyebrow">AGENT ACTIVITY</p>
+              <p className="activity-hint">測試 Codex／Agent 語意動畫與 fallback。</p>
+              <div className="behavior-grid activity-grid">
+                {AGENT_ACTIVITIES.map((activity) => (
+                  <button
+                    className={agentActivity === activity ? "active" : ""}
+                    key={activity}
+                    onClick={() => void simulateAgentActivity(activity)}
+                  >
+                    <span>{activity === "thinking" ? "思考" : activity === "talking" ? "說話" : activity === "success" ? "完成" : "錯誤"}</span>
+                    <small>{activity}</small>
+                  </button>
+                ))}
+                <button className={agentActivity === "idle" ? "active" : ""} onClick={() => void resetAgentActivity()}>
+                  <span>清除</span><small>idle</small>
                 </button>
-              ))}
-              <button className={agentActivity === "idle" ? "active" : ""} onClick={() => void resetAgentActivity()}>
-                <span>清除</span><small>idle</small>
-              </button>
+              </div>
             </div>
           </div>
 
           <div className="panel-section panel-section--bottom">
-            <div className="behavior-settings">
+            <div className="sidebar-card behavior-settings">
               <p className="eyebrow">AUTONOMY</p>
               <label className="debug-toggle">
                 <span>
@@ -896,6 +931,12 @@ export function App() {
           </footer>
         </section>
       </section>}
+      {pendingWorkspaceMode && (
+        <div className="workspace-loading" role="status" aria-live="polite">
+          <span className="workspace-loading__spinner" aria-hidden="true" />
+          <strong>正在切換至 {pendingWorkspaceMode === "runtime" ? "Runtime" : "Creator"}…</strong>
+        </div>
+      )}
     </main>
   );
 }
