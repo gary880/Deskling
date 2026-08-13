@@ -46,6 +46,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - 以 package `feet` anchor 對齊視窗上緣或 Desktop Floor
 - `dragging > reacting > roaming > sleeping > idle` 行為優先序與獨立 surface state
 - 自主 idle variation、視窗／桌面表面散步與可設定的 sleep scheduling
+- Rich Interaction：頭部游標感知、摸頭 gesture、hitbox-specific 點擊與 personality-aware 本機反應
 - 可自訂 Pet personality、App Data override 與安全 prompt composition
 - Codex／Claude Code 訂閱 CLI Conversation sidecar、雙擊開啟、左右換邊、中文 IME 安全輸入與 opt-in 主動短互動
 - 每隻 Pet 獨立的本機 conversation history、保存期限與筆數限制
@@ -105,6 +106,8 @@ Behavior 與 surface 是兩組獨立狀態：角色可以在 active window 或 D
 
 - 按住角色的頭部或身體拖曳，即可移動桌面寵物。
 - 短點頭部會播放 `happy` 反應。
+- 游標靠近頭部時 Pet 會注視游標；在頭部來回移動可觸發具 cooldown 的摸頭反應。
+- 頭部與身體點擊會依 Pet personality 選擇不同動畫與本機短句，不會呼叫 AI。
 - 雙擊角色會開啟獨立 Conversation sidecar；header 的箭頭可切換左右位置。
 - 拖曳 Conversation header 可自訂對話框位置；再次按左右箭頭可恢復停靠。
 - 從 Control Window 選擇「散步」，寵物會在目前螢幕的可用範圍內水平走動。

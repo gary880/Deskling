@@ -375,6 +375,27 @@ special
 
 但不屬於 MVP。
 
+## Rich Interaction v1
+
+Runtime 使用既有 `head` anchor 與 `head`／`body` hitbox 提供本機即時互動：
+
+```text
+cursor near head
+→ face cursor
+→ play look（缺少時 fallback 至 idle）
+
+back-and-forth movement inside head hitbox
+→ recognize petting gesture
+→ personality-aware animation + local speech
+
+head tap / body tap
+→ region-specific local reaction
+```
+
+摸頭辨識要求固定時間窗內的累積移動距離與至少兩次方向反轉；單次滑過不成立，成功後進入 cooldown。Cursor movement 與本機反應不呼叫 AI，也不讀取 Pet window 以外的全域游標位置。
+
+互動只在 idle、沒有 active Agent request、沒有 proactive message 且 conversation 關閉時接受。Dragging 與既有 behavior priority 仍由 Behavior Engine 決定；所有 reaction animation 都必須經過 semantic fallback，package 不需要新增必填資產。
+
 ---
 
 # Motion vs Animation

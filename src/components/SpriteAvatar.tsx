@@ -18,8 +18,13 @@ interface SpriteAvatarProps {
     point: Point,
     region: HitRegion | null,
   ) => void;
-  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>, point: Point) => void;
+  onPointerMove: (
+    event: ReactPointerEvent<HTMLDivElement>,
+    point: Point,
+    region: HitRegion | null,
+  ) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave?: () => void;
   onSpeechClick?: () => void;
 }
 
@@ -35,6 +40,7 @@ export function SpriteAvatar({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onPointerLeave,
   onSpeechClick,
 }: SpriteAvatarProps) {
   const [frame, setFrame] = useState(0);
@@ -122,9 +128,13 @@ export function SpriteAvatar({
           const point = pointFromEvent(event);
           onPointerDown(event, point, renderer.hitTest(point));
         }}
-        onPointerMove={(event) => onPointerMove(event, pointFromEvent(event))}
+        onPointerMove={(event) => {
+          const point = pointFromEvent(event);
+          onPointerMove(event, point, renderer.hitTest(point));
+        }}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerLeave}
       >
         {debug && (
           <div className="debug-layer" aria-hidden="true">

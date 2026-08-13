@@ -17,6 +17,12 @@ import {
   type SurfaceState,
 } from "../behavior/BehaviorEngine";
 import {
+  cursorNearHead,
+  facingForCursor,
+  PettingGestureTracker,
+  reactionForInteraction,
+} from "../behavior/RichInteraction";
+import {
   AGENT_ACTIVITY_ANIMATION,
   AGENT_ACTIVITY_SPEECH,
   AGENT_ACTIVITY_TIMEOUT_MS,
@@ -94,7 +100,6 @@ const SPEECH: Record<string, string> = {
   thinking: "讓我想想…",
   talking: "今天也一起工作吧！",
   happy: "太好啦！",
-  head: "嘿嘿，好癢。",
 };
 
 function readConversationOffset(): SavedPosition | null {
@@ -118,6 +123,7 @@ interface ActivePetGesture {
 
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 const PET_DOUBLE_CLICK_MS = 400;
+const CURSOR_ATTENTION_TIMEOUT_MS = 900;
 
 export function PetOverlay() {
   const { packages, error } = usePetCatalog();
@@ -157,6 +163,7 @@ export function PetOverlay() {
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
   const [memorySaveStatus, setMemorySaveStatus] = useState("");
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
+  const [cursorAware, setCursorAware] = useState(false);
   const [agentProvider, setAgentProvider] = useState<AgentProvider>(() => readAgentProvider());
   const [personalityOverrides, setPersonalityOverrides] = useState<PetPersonalityOverride>({});
   const [proactiveSettings, setProactiveSettings] = useState<ProactiveInteractionSettings>(() => {
@@ -200,6 +207,8 @@ export function PetOverlay() {
   const reactionTimerRef = useRef<number | null>(null);
   const agentActivityTimerRef = useRef<number | null>(null);
   const activeGestureRef = useRef<ActivePetGesture | null>(null);
+  const pettingGestureRef = useRef(new PettingGestureTracker());
+  const cursorAttentionTimerRef = useRef<number | null>(null);
   const desktopMotionTokenRef = useRef(0);
   const behaviorEngineRef = useRef(new BehaviorEngine());
   const agentActivityEngineRef = useRef(new AgentActivityEngine());
@@ -286,6 +295,20 @@ export function PetOverlay() {
       dispatchBehavior("reactionCompleted");
     }, duration);
   }, [dispatchBehavior]);
+
+  const clearCursorAttention = useCallback(() => {
+    if (cursorAttentionTimerRef.current) window.clearTimeout(cursorAttentionTimerRef.current);
+    cursorAttentionTimerRef.current = null;
+    pettingGestureRef.current.resetSequence();
+    setCursorAware(false);
+    if (
+      behaviorEngineRef.current.state === "idle"
+      && !agentActivityEngineRef.current.event
+      && !proactiveActiveRef.current
+    ) {
+      setAnimation((current) => current === "look" ? "idle" : current);
+    }
+  }, []);
 
   const stopDesktopMotion = useCallback(() => {
     desktopMotionTokenRef.current += 1;
@@ -968,6 +991,7 @@ export function PetOverlay() {
       if (speechTimerRef.current) window.clearTimeout(speechTimerRef.current);
       if (idleVariationTimerRef.current) window.clearTimeout(idleVariationTimerRef.current);
       if (reactionTimerRef.current) window.clearTimeout(reactionTimerRef.current);
+      if (cursorAttentionTimerRef.current) window.clearTimeout(cursorAttentionTimerRef.current);
       if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
       if (proactiveIgnoreTimerRef.current) window.clearTimeout(proactiveIgnoreTimerRef.current);
     },
@@ -981,6 +1005,7 @@ export function PetOverlay() {
   ) => {
     if (!region) return;
 
+    clearCursorAttention();
     stopDesktopMotion();
     schedulerRef.current?.notifyActivity();
     dispatchBehavior("dragStarted");
@@ -1001,9 +1026,11 @@ export function PetOverlay() {
       return true;
     };
     const reactToSingleClick = () => {
-      if (proactiveMessage) return;
-      startReaction("happy", 2_400);
-      showSpeech(region === "head" ? SPEECH.head : SPEECH.happy, 1_800);
+      if (proactiveMessage || agentActivityEngineRef.current.event || conversationSendPendingRef.current || !selectedPackage) return;
+      const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
+      const reaction = reactionForInteraction(region === "head" ? "head-tap" : "body-tap", personality);
+      startReaction(reaction.animation, reaction.durationMs);
+      showSpeech(reaction.speech, Math.min(reaction.durationMs, 2_200));
     };
 
     if (!isDesktopRuntime()) {
@@ -1045,6 +1072,49 @@ export function PetOverlay() {
         lastWindowFeetXRef.current = null;
       }
     }
+  };
+
+  const handlePointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    point: Point,
+    region: HitRegion | null,
+  ) => {
+    if (event.buttons !== 0) {
+      clearCursorAttention();
+      return;
+    }
+    const available = behaviorEngineRef.current.state === "idle"
+      && !agentActivityEngineRef.current.event
+      && !proactiveActiveRef.current
+      && !conversationOpenRef.current
+      && !conversationSendPendingRef.current;
+    if (!available || !selectedPackage) {
+      clearCursorAttention();
+      return;
+    }
+
+    const headAnchor = rendererRef.current.getAnchor("head");
+    const nearHead = Boolean(headAnchor && cursorNearHead(point, headAnchor));
+    if (nearHead && headAnchor) {
+      setCursorAware(true);
+      const nextFacing = facingForCursor(point, headAnchor, facing);
+      if (nextFacing !== facing) setFacing(nextFacing);
+      setAnimation((current) => current === "idle" || current === "look" ? "look" : current);
+      if (cursorAttentionTimerRef.current) window.clearTimeout(cursorAttentionTimerRef.current);
+      cursorAttentionTimerRef.current = window.setTimeout(clearCursorAttention, CURSOR_ATTENTION_TIMEOUT_MS);
+    } else {
+      clearCursorAttention();
+    }
+
+    if (!pettingGestureRef.current.record(point, region, event.timeStamp)) return;
+    const reaction = reactionForInteraction(
+      "petting",
+      effectivePersonality(selectedPackage.manifest, personalityOverrides),
+    );
+    clearCursorAttention();
+    schedulerRef.current?.notifyActivity();
+    startReaction(reaction.animation, reaction.durationMs);
+    showSpeech(reaction.speech, Math.min(reaction.durationMs, 2_400));
   };
 
   const openProactiveConversation = () => {
@@ -1212,6 +1282,7 @@ export function PetOverlay() {
       data-behavior-state={behaviorState}
       data-surface-state={surfaceState}
       data-agent-activity={agentEvent?.activity ?? "idle"}
+      data-cursor-aware={cursorAware}
     >
       <div className="pet-overlay__avatar">
         <SpriteAvatar
@@ -1224,8 +1295,9 @@ export function PetOverlay() {
           speech={speech}
           onAnimationComplete={handleAnimationComplete}
           onPointerDown={(event, point, region) => void handlePointerDown(event, point, region)}
-          onPointerMove={() => undefined}
+          onPointerMove={handlePointerMove}
           onPointerUp={() => undefined}
+          onPointerLeave={clearCursorAttention}
           onSpeechClick={proactiveMessage ? openProactiveConversation : undefined}
         />
       </div>
