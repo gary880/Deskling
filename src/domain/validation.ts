@@ -46,8 +46,8 @@ export function validateOpenPetsManifest(
 ): OpenPetsManifest {
   const issues: string[] = [];
   if (!isObject(value)) throw new InvalidPetPackageError(["pet.json must be an object"]);
-  if (typeof value.id !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(value.id)) {
-    issues.push("pet.json id must use lowercase letters, numbers, or hyphens");
+  if (typeof value.id !== "string" || value.id.length > 64 || !/^[a-z0-9][a-z0-9-]*$/.test(value.id)) {
+    issues.push("pet.json id must use 1-64 lowercase letters, numbers, or hyphens");
   }
   if (typeof value.displayName !== "string" || !value.displayName.trim()) {
     issues.push("pet.json displayName is required");
@@ -157,8 +157,8 @@ export function validateManifest(
   if (!isObject(value)) throw new InvalidPetPackageError(["manifest must be an object"]);
 
   if (value.schemaVersion !== 1) issues.push("schemaVersion must be 1");
-  if (typeof value.id !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(value.id)) {
-    issues.push("id must use lowercase letters, numbers, or hyphens");
+  if (typeof value.id !== "string" || value.id.length > 64 || !/^[a-z0-9][a-z0-9-]*$/.test(value.id)) {
+    issues.push("id must use 1-64 lowercase letters, numbers, or hyphens");
   }
   if (typeof value.name !== "string" || !value.name.trim()) issues.push("name is required");
   if (typeof value.author !== "string" || !value.author.trim()) issues.push("author is required");

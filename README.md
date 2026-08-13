@@ -51,6 +51,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - 每隻 Pet 獨立的本機 conversation history、保存期限與筆數限制
 - 每隻 Pet 獨立、由使用者明確確認的本機 memory，以及敏感資料防護與 prompt context budget
 - 安全的 Pet ZIP import、manifest／asset validation、衝突確認與原子安裝
+- OpenPets Creator：atlas／animation mapping、anchor、hitbox、personality 視覺編輯與可重新匯入的完整 ZIP export
 
 Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `pet.json` 與 `spritesheet.webp` 的 OpenPets package，再將 `pet.json` URL 加進 catalog；anchor、hitbox、播放設定、聲音與 personality 可放在選用的 `deskling.json` sidecar。舊版完整 `deskling.json` package 仍可載入與匯入。
 
@@ -115,3 +116,9 @@ Control Window 提供：
 - Behavior、agent activity、autonomy、proactive conversation 與 desktop world 設定
 
 Pet memory 的「停用」只代表不加入對話 context，不會刪除既有內容；只有刪除單項或 `Clear All Memory` 才會移除資料。
+
+### Creator round trip
+
+切換至 `Creator` 後，匯入或選擇一個 OpenPets 8×9 package，即可編輯 package metadata、逐列預覽 atlas、設定 frame／fps／loop、調整 semantic animation mapping、anchors、hitboxes 與預設 personality。幾何設定會疊加顯示在目前預覽 frame；`Advanced JSON` 仍保留給需要直接編輯 sidecar 的作者。以內建角色開始時會預設使用 `<id>-custom`，避免輸出一個無法覆寫內建 package 的 ID。
+
+`Export installable ZIP` 會先執行與 runtime 相同的 sidecar／manifest 幾何驗證，再將編輯後的 `pet.json`、`deskling.json`、spritesheet 與引用的音效封裝成 `<pet-id>.zip`。輸出的檔案可直接透過 `Import Pet ZIP` 重新安裝；若 package ID 已存在，仍會走明確替換確認。

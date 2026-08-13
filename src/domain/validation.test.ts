@@ -58,6 +58,13 @@ describe("validateManifest", () => {
     expect(result.deskling.valid).toBe(false);
   });
 
+  it("keeps package ids within the native importer's 64-character limit", () => {
+    expect(() => validateOpenPetsManifest({
+      ...bellaPet,
+      id: `a${"b".repeat(64)}`,
+    })).toThrow(/1-64/);
+  });
+
   it("rejects invalid Deskling playback settings", () => {
     expect(() => validateDesklingExtension({
       schemaVersion: 1,

@@ -69,6 +69,7 @@ export interface PetPackage {
   imageWidth: number;
   imageHeight: number;
   desklingExtension?: import("./openPets").DesklingExtension;
+  openPetsManifest?: import("./openPets").OpenPetsManifest;
   atlasFrameCounts?: number[];
 }
 

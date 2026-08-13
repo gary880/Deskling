@@ -86,6 +86,7 @@ export async function loadPetPackage(manifestUrl: string): Promise<PetPackage> {
       source: "bundled", manifest, manifestUrl, assetUrl,
       imageWidth: dimensions.width, imageHeight: dimensions.height,
       desklingExtension: extension,
+      openPetsManifest: pet,
       atlasFrameCounts: dimensions.frameCounts,
     };
   }
@@ -144,6 +145,7 @@ export async function loadInstalledOpenPetsPackage(
     imageWidth: dimensions.width,
     imageHeight: dimensions.height,
     desklingExtension: extension,
+    openPetsManifest: pet,
     atlasFrameCounts: frameCounts,
   };
 }
