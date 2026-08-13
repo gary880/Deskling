@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { cursorPosition, currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AutonomousBehaviorScheduler,
@@ -97,6 +97,11 @@ import {
   restorePetWindowPosition,
   type SavedPosition,
 } from "./windowPosition";
+import {
+  clientPointFromPhysicalCursor,
+  framePointFromClient,
+  pointInsideBounds,
+} from "./regionalClickThrough";
 
 const SPEECH: Record<string, string> = {
   idle: "我在這裡。",
@@ -128,6 +133,7 @@ interface ActivePetGesture {
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
 const PET_DOUBLE_CLICK_MS = 400;
 const CURSOR_ATTENTION_TIMEOUT_MS = 900;
+const REGIONAL_CLICK_THROUGH_INTERVAL_MS = 50;
 
 export function PetOverlay() {
   const { packages, error } = usePetCatalog();
@@ -206,6 +212,9 @@ export function PetOverlay() {
     ),
   }));
   const rendererRef = useRef(new SpriteRenderer());
+  const overlayRef = useRef<HTMLElement | null>(null);
+  const cursorEventsIgnoredRef = useRef<boolean | null>(null);
+  const cursorEventsUpdateRef = useRef<Promise<void>>(Promise.resolve());
   const speechTimerRef = useRef<number | null>(null);
   const idleVariationTimerRef = useRef<number | null>(null);
   const reactionTimerRef = useRef<number | null>(null);
@@ -821,12 +830,86 @@ export function PetOverlay() {
     rendererRef.current.setFacing(facing);
   }, [facing]);
 
-  useEffect(() => {
-    if (!isDesktopRuntime()) return;
+  const setCursorEventsIgnored = useCallback((ignored: boolean) => {
+    if (!isDesktopRuntime() || cursorEventsIgnoredRef.current === ignored) return;
+    cursorEventsIgnoredRef.current = ignored;
     const appWindow = getCurrentWindow();
+    cursorEventsUpdateRef.current = cursorEventsUpdateRef.current
+      .catch(() => undefined)
+      .then(() => appWindow.setIgnoreCursorEvents(ignored))
+      .catch(() => {
+        if (cursorEventsIgnoredRef.current === ignored) cursorEventsIgnoredRef.current = null;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktopRuntime() || !selectedPackage) return;
     writeBooleanSetting(DESKTOP_STORAGE.clickThrough, clickThrough);
-    void appWindow.setIgnoreCursorEvents(clickThrough);
-  }, [clickThrough]);
+
+    if (clickThrough) {
+      setCursorEventsIgnored(true);
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    let active = true;
+    let polling = false;
+
+    const poll = async () => {
+      if (!active || polling) return;
+      polling = true;
+      try {
+        if (activeGestureRef.current) {
+          setCursorEventsIgnored(false);
+          return;
+        }
+
+        const overlay = overlayRef.current;
+        const sprite = overlay?.querySelector<HTMLElement>(".sprite-avatar");
+        if (!overlay || !sprite) {
+          setCursorEventsIgnored(true);
+          return;
+        }
+
+        const [cursor, contentOrigin, scaleFactor] = await Promise.all([
+          cursorPosition(),
+          appWindow.innerPosition(),
+          appWindow.scaleFactor(),
+        ]);
+        if (!active) return;
+
+        const clientPoint = clientPointFromPhysicalCursor(cursor, contentOrigin, scaleFactor);
+        const insideOverlay = pointInsideBounds(clientPoint, overlay.getBoundingClientRect());
+        const spriteRect = sprite.getBoundingClientRect();
+        const framePoint = framePointFromClient(
+          clientPoint,
+          spriteRect,
+          selectedPackage.manifest.renderer.frameWidth,
+          selectedPackage.manifest.renderer.frameHeight,
+        );
+        const overPet = framePoint !== null && rendererRef.current.hitTest(framePoint) !== null;
+        const clickableBubble = overlay.querySelector<HTMLElement>('.speech-bubble[data-clickable="true"]');
+        const overClickableBubble = insideOverlay && clickableBubble !== null
+          && pointInsideBounds(clientPoint, clickableBubble.getBoundingClientRect());
+        const explicitInteractive = overlay.querySelector<HTMLElement>("[data-click-through-interactive]");
+        const overExplicitInteractive = insideOverlay && explicitInteractive !== null
+          && pointInsideBounds(clientPoint, explicitInteractive.getBoundingClientRect());
+
+        setCursorEventsIgnored(!(overPet || overClickableBubble || overExplicitInteractive));
+      } catch {
+        // Keep the previous mode if native cursor/window geometry is temporarily unavailable.
+      } finally {
+        polling = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), REGIONAL_CLICK_THROUGH_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [clickThrough, selectedPackage, setCursorEventsIgnored]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
@@ -1103,6 +1186,7 @@ export function PetOverlay() {
     // applies its own movement threshold, so a stationary head click remains a tap.
     const gesture: ActivePetGesture = { region, moved: false };
     activeGestureRef.current = gesture;
+    setCursorEventsIgnored(false);
     setSpeech(null);
 
     try {
@@ -1341,6 +1425,7 @@ export function PetOverlay() {
 
   return (
     <main
+      ref={overlayRef}
       className={`pet-overlay ${clickThrough ? "pet-overlay--click-through" : ""}`}
       data-behavior-state={behaviorState}
       data-surface-state={surfaceState}
@@ -1365,7 +1450,7 @@ export function PetOverlay() {
         />
       </div>
       {debug && (
-        <button className="overlay-facing" onClick={() => setFacing(facing === "left" ? "right" : "left")}>
+        <button data-click-through-interactive className="overlay-facing" onClick={() => setFacing(facing === "left" ? "right" : "left")}>
           facing: {facing}
         </button>
       )}
