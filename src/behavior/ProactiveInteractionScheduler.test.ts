@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROACTIVE_SETTINGS, canStartProactiveInteraction, emptyProactiveHistory, formatProactiveUtterance, isQuietHour, recordProactiveAttempt, recordProactiveIgnored } from "./ProactiveInteractionScheduler";
+import { DEFAULT_PROACTIVE_SETTINGS, canStartProactiveInteraction, emptyProactiveHistory, formatProactiveUtterance, isQuietHour, localProactiveUtterance, proactiveOperationalBlockReason, recordProactiveAttempt, recordProactiveIgnored } from "./ProactiveInteractionScheduler";
 
 const context = { conversationOpen: false, activeRequest: false, dragging: false, sleeping: false, userTyping: false, petVisible: true, idleMinutes: 42 };
 
@@ -17,6 +17,26 @@ describe("proactive interaction guardrails", () => {
     const attempted = recordProactiveAttempt(emptyProactiveHistory(), now);
     expect(canStartProactiveInteraction(settings, context, attempted, new Date(now.getTime() + 31 * 60_000))).toBe(false);
     expect(canStartProactiveInteraction(settings, { ...context, userTyping: true }, emptyProactiveHistory(), now)).toBe(false);
+  });
+
+  it("uses frequency-specific idle thresholds and can wake a sleeping pet", () => {
+    const now = new Date(2026, 1, 1, 14);
+    const settings = { ...DEFAULT_PROACTIVE_SETTINGS, enabled: true, useAi: false };
+    expect(canStartProactiveInteraction({ ...settings, frequency: "often" }, { ...context, idleMinutes: 10, sleeping: true }, emptyProactiveHistory(), now)).toBe(true);
+    expect(canStartProactiveInteraction({ ...settings, frequency: "sometimes" }, { ...context, idleMinutes: 19 }, emptyProactiveHistory(), now)).toBe(false);
+    expect(canStartProactiveInteraction({ ...settings, frequency: "sometimes" }, { ...context, idleMinutes: 20 }, emptyProactiveHistory(), now)).toBe(true);
+    expect(canStartProactiveInteraction({ ...settings, frequency: "rare" }, { ...context, idleMinutes: 29 }, emptyProactiveHistory(), now)).toBe(false);
+  });
+
+  it("explains operational blocks but does not treat sleep as a block", () => {
+    expect(proactiveOperationalBlockReason({ ...context, sleeping: true })).toBeNull();
+    expect(proactiveOperationalBlockReason({ ...context, conversationOpen: true })).toContain("關閉");
+    expect(proactiveOperationalBlockReason({ ...context, petVisible: false })).toContain("不可見");
+  });
+
+  it("creates local personality-aware greetings when AI generation is off", () => {
+    const personality = { preferredLanguage: "en" as const, traits: { warmth: 80, energy: 40, humor: 30, directness: 50, verbosity: 30 } };
+    expect(localProactiveUtterance(personality, "evening")).toMatch(/[A-Za-z]/);
   });
 
   it("backs off after two ignores and pauses for the day after three", () => {

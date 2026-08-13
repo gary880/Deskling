@@ -535,6 +535,9 @@ button { color: inherit; }
 .privacy-note { color: #8b8175; font-size: 8px; line-height: 1.5; }
 .proactive-test-button { min-height: 32px; border: 1px solid var(--orange); border-radius: 8px; background: #fffaf4; color: var(--orange); font-size: 9px; font-weight: 800; cursor: pointer; }
 .proactive-test-button:disabled { opacity: .45; cursor: default; }
+.proactive-test-status { padding: 6px 7px; border-radius: 7px; background: #f3ecdf; color: #756b60; font-size: 8px; line-height: 1.45; }
+.proactive-test-status[data-kind="success"] { background: #edf3e9; color: #63795b; }
+.proactive-test-status[data-kind="blocked"], .proactive-test-status[data-kind="error"] { background: #f8e5df; color: #984f3e; }
 .history-lab { display: grid; gap: 10px; }
 .history-lab__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .history-lab__actions button { min-height: 32px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfa; color: #70665b; font-size: 9px; font-weight: 750; cursor: pointer; }

@@ -102,6 +102,8 @@ Behavior 與 surface 是兩組獨立狀態：角色可以在 active window 或 D
 
 自主計時只使用 Deskling 自身互動、視窗目標變更與經過時間，不監聽全系統鍵盤或滑鼠輸入。預設約 45 秒後播放 idle variation，90–180 秒之間嘗試一次散步；拖曳、點擊與手動 behavior 會重設計時。
 
+Proactive conversation 的 `often`／`sometimes`／`rare` 會在使用者分別閒置 10／20／30 分鐘後開始檢查頻率、勿擾時段、每日上限與忽略 backoff。Pet 正在睡眠時，合格的主動互動會先喚醒它；對話中、Agent request、拖曳、輸入中或視窗不可見時仍會阻擋。關閉「使用 AI 產生短句」會改用 personality-aware 本機短句，而不是停用主動互動；`Test now` 會顯示觸發成功、阻擋原因或 provider 錯誤。
+
 ### Overlay 操作
 
 - 按住角色的頭部或身體拖曳，即可移動桌面寵物。

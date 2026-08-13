@@ -117,6 +117,15 @@ Proactive interaction 預設且固定不使用 Pet memory。前端呼叫明確�
 
 Proactive context 只包含 Deskling 自身產生的安全狀態，例如約略時段、閒置分鐘、behavior、personality traits 與最近互動結果；不讀取視窗標題、剪貼簿、文件或 workspace。
 
+觸發規則：
+
+- `often`／`sometimes`／`rare` 的 idle threshold 分別為 10／20／30 分鐘；frequency cooldown 仍分別為 30／90／180 分鐘。
+- 使用者觸碰或拖曳 Pet、操作 Conversation、手動 behavior、切換 provider／proactive 設定時會同步更新同一份 last-user-activity clock。
+- Sleeping 不再是永久阻擋；符合其他 guardrail 時會先透過 Autonomy scheduler 喚醒再顯示短句。
+- Conversation open、active request、dragging、typing 與 Pet window 不可見仍會阻擋。
+- `useAi: false` 使用按 personality traits 與偏好語言選擇的本機白名單短句，不啟動 provider process。
+- `Test now` 忽略 idle、quiet hours、frequency、daily limit 與 ignored backoff，但不繞過 operational safety，並把成功、阻擋原因或 runtime error 回報 Control window。
+
 ## Sensitive-data Guardrails
 
 Memory 禁止保存疑似：

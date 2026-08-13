@@ -23,6 +23,7 @@ export const DESKTOP_EVENTS = {
   autonomySettings: "deskling-autonomy-settings",
   proactiveSettings: "deskling-proactive-settings",
   testProactive: "deskling-test-proactive",
+  proactiveTestStatus: "deskling-proactive-test-status",
   historySettingsChanged: "deskling-history-settings-changed",
   conversationHistoryChanged: "deskling-conversation-history-changed",
   newConversation: "deskling-new-conversation",
@@ -228,6 +229,11 @@ export async function emitToPet<T>(event: string, payload: T): Promise<void> {
 export async function emitToConversation<T>(event: string, payload: T): Promise<void> {
   if (!isDesktopRuntime()) return;
   await emitTo("conversation", event, payload);
+}
+
+export async function emitToControl<T>(event: string, payload: T): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  await emitTo("control", event, payload);
 }
 
 export async function showPetWindow(): Promise<void> {
