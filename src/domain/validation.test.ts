@@ -26,6 +26,14 @@ describe("validateManifest", () => {
     expect(manifest.compatibilityProfile).toBe("codex-pets-8x9");
     expect(manifest.animations.idle.frames).toBe(6);
     expect(manifest.animations.walk.facingRows).toEqual({ right: 1, left: 2 });
+    expect(manifest.animations.sleep.row).toBe(8);
+    expect(manifest.animations.talking.row).toBe(7);
+    expect(manifest.animations.energetic.row).toBe(4);
+    const mappedRows = new Set(Object.values(manifest.animations).flatMap((animation) => [
+      animation.row,
+      ...Object.values(animation.facingRows ?? {}),
+    ]));
+    expect([...mappedRows].sort()).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
   it("treats a missing Deskling sidecar as a valid enhanced package with defaults", () => {

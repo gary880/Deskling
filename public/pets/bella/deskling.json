@@ -6,16 +6,18 @@
   },
   "animationMap": {
     "walk": { "right": "running-right", "left": "running-left" },
+    "sleep": "review",
     "thinking": "waiting",
     "happy": "waving",
     "annoyed": "failed",
-    "talking": "review"
+    "energetic": "jumping",
+    "talking": "running"
   },
   "playback": {
     "idle": { "frames": 6, "fps": 4, "loop": true },
     "sleep": { "frames": 6, "fps": 3, "loop": true },
     "happy": { "frames": 4, "fps": 7, "loop": false },
-    "talking": { "frames": 5, "fps": 7, "loop": true },
+    "talking": { "frames": 6, "fps": 7, "loop": true },
     "surprised": { "frames": 6, "fps": 6, "loop": false },
     "annoyed": { "frames": 6, "fps": 6, "loop": false }
   },

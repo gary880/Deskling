@@ -3,6 +3,7 @@ import type { AnimationDefinition } from "./avatar";
 const FALLBACKS: Record<string, string[]> = {
   annoyed: ["surprised", "idle"],
   surprised: ["idle"],
+  energetic: ["happy", "walk", "idle"],
   happy: ["idle"],
   talking: ["thinking", "idle"],
   thinking: ["look", "idle"],

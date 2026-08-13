@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
-import type { AgentProvider, AgentProviderStatus, ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings } from "../agent/conversation";
+import type { AgentProvider, AgentProviderStatus, ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings, ConversationOutputProfile } from "../agent/conversation";
 import type { PetPersonalityOverride } from "../domain/avatar";
 import type { PetMemory } from "../domain/petMemory";
 
@@ -125,9 +125,9 @@ export async function agentProviderStatuses(): Promise<AgentProviderStatus[]> {
   return invoke<AgentProviderStatus[]>("agent_provider_statuses");
 }
 
-export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation", approvedMemories: PetMemory[] = [], provider: AgentProvider = readAgentProvider()): Promise<string> {
+export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation", approvedMemories: PetMemory[] = [], provider: AgentProvider = readAgentProvider(), outputProfile: ConversationOutputProfile = "default"): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose, approvedMemories, provider });
+  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose, approvedMemories, provider, outputProfile });
 }
 
 export async function loadPetMemory(petId: string, maxEntries: number): Promise<PetMemory[]> {

@@ -53,21 +53,29 @@ import { MotionEngine } from "./motion/MotionEngine";
 import { SpriteRenderer } from "./renderers/SpriteRenderer";
 import { DEFAULT_PROACTIVE_SETTINGS, type ProactiveInteractionSettings, type ProactiveTestStatus } from "./behavior/ProactiveInteractionScheduler";
 
-const BEHAVIORS = ["idle", "walk", "sleep", "thinking", "talking", "happy"] as const;
+const BEHAVIORS = ["idle", "look", "walk", "energetic", "thinking", "talking", "happy", "surprised", "annoyed", "sleep"] as const;
 const BEHAVIOR_LABELS: Record<(typeof BEHAVIORS)[number], string> = {
   idle: "待機",
+  look: "注視",
   walk: "散步",
+  energetic: "活力",
   sleep: "睡覺",
   thinking: "思考",
   talking: "說話",
   happy: "開心",
+  surprised: "驚喜",
+  annoyed: "失敗",
 };
 const SPEECH: Record<string, string> = {
   idle: "我在這裡。",
+  look: "我有在看。",
+  energetic: "出發！",
   sleep: "Zzz…",
   thinking: "讓我想想…",
   talking: "今天也一起工作吧！",
   happy: "太好啦！",
+  surprised: "咦！",
+  annoyed: "唔，失敗了。",
   head: "嘿嘿，好癢。",
 };
 const SLEEP_AFTER_OPTIONS: readonly SleepAfterMinutes[] = [0, 15, 30, 60];
@@ -671,13 +679,13 @@ export function App() {
                 <i aria-hidden="true" />
               </label>
               <div className="proactive-settings">
-                <p className="eyebrow">PROACTIVE CONVERSATIONS</p>
-                <label className="debug-toggle"><span><strong>主動打招呼</strong><small>明確選擇加入，無額外 context</small></span><input type="checkbox" checked={proactiveSettings.enabled} disabled={!isDesktopRuntime()} onChange={(e) => updateProactiveSettings({ enabled: e.target.checked })} /><i aria-hidden="true" /></label>
-                <label className="debug-toggle"><span><strong>使用 AI 產生短句</strong><small>關閉時改用本機 personality 短句</small></span><input type="checkbox" checked={proactiveSettings.useAi} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ useAi: e.target.checked })} /><i aria-hidden="true" /></label>
+                <p className="eyebrow">PROACTIVE PRESENCE</p>
+                <label className="debug-toggle"><span><strong>主動陪伴</strong><small>明確選擇加入，偶爾讓 Pet 自言自語</small></span><input type="checkbox" checked={proactiveSettings.enabled} disabled={!isDesktopRuntime()} onChange={(e) => updateProactiveSettings({ enabled: e.target.checked })} /><i aria-hidden="true" /></label>
+                <label className="debug-toggle"><span><strong>使用 AI 產生陪伴碎念</strong><small>從 30 種荒謬前提產生短句；關閉時使用本機短句</small></span><input type="checkbox" checked={proactiveSettings.useAi} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ useAi: e.target.checked })} /><i aria-hidden="true" /></label>
                 <label className="select-setting"><span><strong>頻率</strong><small>閒置 10–30 分鐘後依頻率觸發</small></span><select value={proactiveSettings.frequency} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ frequency: e.target.value as ProactiveInteractionSettings["frequency"] })}><option value="rare">少</option><option value="sometimes">有時</option><option value="often">常</option></select></label>
                 <div className="quiet-hours"><label>勿擾開始<input type="time" value={proactiveSettings.quietHoursStart} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ quietHoursStart: e.target.value })} /></label><label>勿擾結束<input type="time" value={proactiveSettings.quietHoursEnd} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ quietHoursEnd: e.target.value })} /></label></div>
                 <label className="personality-field"><span>每日上限</span><input type="number" min="1" max="10" value={proactiveSettings.dailyLimit} disabled={!proactiveSettings.enabled} onChange={(e) => updateProactiveSettings({ dailyLimit: Math.max(1, Math.min(10, Number(e.target.value))) })} /></label>
-                <small className="privacy-note">AI context：Pet 名稱、人格、約略時段、閒置時間、目前 behavior，以及最近 Pet 對話是否完成。永不讀取視窗標題、剪貼簿、文件或 workspace。</small>
+                <small className="privacy-note">AI context：Pet 名稱、人格、約略時段、閒置時間、目前 behavior、最近 Pet 對話是否完成，以及一個本機選出的虛構前提。永不讀取視窗標題、剪貼簿、文件或 workspace。</small>
                 <button className="proactive-test-button" type="button" disabled={!isDesktopRuntime() || !proactiveSettings.enabled || proactiveTestStatus?.kind === "checking"} onClick={() => void testProactiveConversation()}>Test now</button>
                 {proactiveTestStatus && <small className="proactive-test-status" data-kind={proactiveTestStatus.kind} role="status">{proactiveTestStatus.message}</small>}
               </div>

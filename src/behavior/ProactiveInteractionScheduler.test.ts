@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROACTIVE_SETTINGS, canStartProactiveInteraction, emptyProactiveHistory, formatProactiveUtterance, isQuietHour, localProactiveUtterance, proactiveOperationalBlockReason, recordProactiveAttempt, recordProactiveIgnored } from "./ProactiveInteractionScheduler";
+import { DEFAULT_PROACTIVE_SETTINGS, canStartProactiveInteraction, emptyProactiveHistory, formatProactiveUtterance, isQuietHour, localProactiveUtterance, proactiveOperationalBlockReason, recordPresenceBeat, recordProactiveAttempt, recordProactiveIgnored } from "./ProactiveInteractionScheduler";
 
 const context = { conversationOpen: false, activeRequest: false, dragging: false, sleeping: false, userTyping: false, petVisible: true, idleMinutes: 42 };
 
@@ -47,10 +47,20 @@ describe("proactive interaction guardrails", () => {
     expect(history.consecutiveIgnored).toBe(2);
     history = recordProactiveIgnored(history, now);
     expect(history.pausedUntilDay).toBe("2026-2-1");
+    const ambientSettings = { ...DEFAULT_PROACTIVE_SETTINGS, enabled: true, useAi: true, frequency: "often" as const };
+    expect(canStartProactiveInteraction(ambientSettings, context, history, new Date(now.getTime() + 31 * 60_000))).toBe(true);
+  });
+
+  it("tracks a bounded recent presence-beat history", () => {
+    let history = emptyProactiveHistory();
+    for (const id of ["a", "b", "c", "d", "e", "f", "e"]) history = recordPresenceBeat(history, id);
+    expect(history.presenceSequence).toBe(7);
+    expect(history.recentBeatIds).toEqual(["b", "c", "d", "f", "e"]);
   });
 
   it("keeps one complete short sentence and marks unavoidable truncation", () => {
     expect(formatProactiveUtterance("先休息一下吧！ 等你回來。" )).toBe("先休息一下吧！");
+    expect(formatProactiveUtterance("空氣穿反了，噗嚕啾。 下一句", 40)).toBe("空氣穿反了，噗嚕啾。");
     expect(formatProactiveUtterance("很長".repeat(50))).toHaveLength(80);
     expect(formatProactiveUtterance("很長".repeat(50)).endsWith("…")).toBe(true);
   });

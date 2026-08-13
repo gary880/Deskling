@@ -18,7 +18,7 @@ interface Props {
   importing: boolean;
 }
 
-const SEMANTICS = ["idle", "sleep", "thinking", "talking", "happy", "annoyed", "surprised", "look"] as const;
+const SEMANTICS = ["idle", "sleep", "thinking", "talking", "happy", "annoyed", "surprised", "energetic", "look"] as const;
 const TRAITS = ["warmth", "energy", "humor", "directness", "verbosity"] as const;
 const ANCHORS = ["feet", "head", "speechBubble"] as const;
 const HITBOXES = ["body", "head"] as const;

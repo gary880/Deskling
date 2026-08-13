@@ -127,6 +127,7 @@ fn start_pet_conversation(
     purpose: Option<String>,
     approved_memories: Option<Vec<pet_memory::PetMemory>>,
     provider: Option<agent_provider::AgentProvider>,
+    output_profile: Option<String>,
 ) -> Result<String, String> {
     agent_runtime::start(
         app,
@@ -137,6 +138,7 @@ fn start_pet_conversation(
         purpose.unwrap_or_else(|| "conversation".into()),
         approved_memories.unwrap_or_default(),
         provider.unwrap_or_default(),
+        output_profile.unwrap_or_else(|| "default".into()),
     )
 }
 

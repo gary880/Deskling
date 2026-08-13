@@ -35,6 +35,8 @@ export interface ProactiveHistory {
   count: number;
   lastAttemptAt: number;
   consecutiveIgnored: number;
+  presenceSequence: number;
+  recentBeatIds: string[];
   pausedUntilDay?: string;
 }
 
@@ -82,12 +84,12 @@ export function canStartProactiveInteraction(
 ): boolean {
   const today = dayKey(now);
   const count = history.day === today ? history.count : 0;
-  const ignoredMultiplier = history.consecutiveIgnored >= 2 ? 2 : 1;
+  const ignoredMultiplier = !settings.useAi && history.consecutiveIgnored >= 2 ? 2 : 1;
   return settings.enabled
     && !context.conversationOpen && !context.activeRequest && !context.dragging
     && !context.userTyping && context.petVisible
     && context.idleMinutes >= PROACTIVE_IDLE_MINUTES[settings.frequency]
-    && history.pausedUntilDay !== today
+    && (settings.useAi || history.pausedUntilDay !== today)
     && !isQuietHour(now, settings.quietHoursStart, settings.quietHoursEnd)
     && count < Math.max(1, Math.min(10, settings.dailyLimit))
     && now.getTime() - history.lastAttemptAt >= FREQUENCY_MS[settings.frequency] * ignoredMultiplier;
@@ -150,8 +152,25 @@ export function recordProactiveOpened(history: ProactiveHistory): ProactiveHisto
   return { ...history, consecutiveIgnored: 0, pausedUntilDay: undefined };
 }
 
+export function recordPresenceBeat(history: ProactiveHistory, beatId: string): ProactiveHistory {
+  const sequence = Number.isFinite(history.presenceSequence) ? history.presenceSequence : 0;
+  const recentBeatIds = Array.isArray(history.recentBeatIds) ? history.recentBeatIds : [];
+  return {
+    ...history,
+    presenceSequence: sequence + 1,
+    recentBeatIds: [...recentBeatIds.filter((id) => id !== beatId), beatId].slice(-5),
+  };
+}
+
 export function emptyProactiveHistory(): ProactiveHistory {
-  return { day: "", count: 0, lastAttemptAt: 0, consecutiveIgnored: 0 };
+  return {
+    day: "",
+    count: 0,
+    lastAttemptAt: 0,
+    consecutiveIgnored: 0,
+    presenceSequence: 0,
+    recentBeatIds: [],
+  };
 }
 
 export function formatProactiveUtterance(value: string, maxCharacters = 80): string {

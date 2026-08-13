@@ -1,6 +1,7 @@
 export type ConversationEventType = "started" | "text" | "completed" | "error";
 
 export type AgentProvider = "codex" | "claude-code";
+export type ConversationOutputProfile = "default" | "ambient-nonsense";
 
 export const AGENT_PROVIDER_LABELS: Record<AgentProvider, string> = {
   codex: "Codex",

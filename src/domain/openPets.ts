@@ -50,12 +50,13 @@ export interface DesklingExtension {
 const DEFAULT_MAP: Record<string, DesklingAnimationTarget> = {
   idle: "idle",
   walk: { right: "running-right", left: "running-left" },
-  sleep: "idle",
+  sleep: "review",
   thinking: "waiting",
-  talking: "review",
+  talking: "running",
   happy: "waving",
   annoyed: "failed",
   surprised: "jumping",
+  energetic: "jumping",
   look: "idle",
 };
 

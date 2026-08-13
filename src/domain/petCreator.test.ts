@@ -111,6 +111,9 @@ describe("Creator package round trip", () => {
     expect(extension.anchors?.feet).toBeDefined();
     expect(extension.hitboxes?.body).toBeDefined();
     expect(extension.animationMap?.walk).toEqual({ right: "running-right", left: "running-left" });
+    expect(extension.animationMap?.sleep).toBe("review");
+    expect(extension.animationMap?.talking).toBe("running");
+    expect(extension.animationMap?.energetic).toBe("jumping");
     expect(creatorPetFromPackage(pkg)?.id).toBe("bella-custom");
   });
 });

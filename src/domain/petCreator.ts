@@ -28,6 +28,7 @@ const ROW_TO_SEMANTIC: Record<number, string[]> = {
   4: ["surprised"],
   5: ["annoyed"],
   6: ["thinking"],
+  7: ["energetic"],
   8: ["talking"],
 };
 
@@ -157,10 +158,12 @@ export function extensionFromPackage(pkg: PetPackage): DesklingExtension {
     extends: { format: "openpets", profile: "codex-pets-8x9" },
     animationMap: {
       walk: { right: "running-right", left: "running-left" },
+      sleep: "review",
       thinking: "waiting",
       happy: "waving",
       annoyed: "failed",
-      talking: "review",
+      energetic: "jumping",
+      talking: "running",
     },
     playback,
     anchors: pkg.manifest.anchors,
