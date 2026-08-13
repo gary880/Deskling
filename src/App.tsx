@@ -5,7 +5,8 @@ import { PersonalitySettings } from "./components/PersonalitySettings";
 import { ConversationHistorySettings } from "./components/ConversationHistorySettings";
 import { PetMemorySettings } from "./components/PetMemorySettings";
 import { PetCreator } from "./components/PetCreator";
-import type { ConversationEvent } from "./agent/conversation";
+import { AgentProviderSettings } from "./components/AgentProviderSettings";
+import type { AgentProvider, ConversationEvent } from "./agent/conversation";
 import {
   DEFAULT_AUTONOMY_SETTINGS,
   type AutonomySettings,
@@ -30,12 +31,14 @@ import {
   isDesktopRuntime,
   listenDesktop,
   readBooleanSetting,
+  readAgentProvider,
   readNumberSetting,
   removeInstalledPet,
   reportAgentActivity,
   resetPetConversation,
   showPetWindow,
   startPetConversation,
+  stopPetConversation,
   writeBooleanSetting,
   writeNumberSetting,
 } from "./desktop/bridge";
@@ -84,6 +87,7 @@ export function App() {
   const [speech, setSpeech] = useState<string | null>("點一下舞台，我會走過去。");
   const [personalityPreview, setPersonalityPreview] = useState("");
   const [personalityPreviewBusy, setPersonalityPreviewBusy] = useState(false);
+  const [agentProvider, setAgentProvider] = useState<AgentProvider>(() => readAgentProvider());
   const [positionX, setPositionX] = useState(420);
   const [clickThrough, setClickThrough] = useState(() =>
     readBooleanSetting(DESKTOP_STORAGE.clickThrough, false),
@@ -212,23 +216,33 @@ export function App() {
         }
       }),
       listenDesktop<ConversationEvent>(DESKTOP_EVENTS.conversation, (event) => {
-        if (!personalityPreviewBusy) return;
+        if (!personalityPreviewBusy || (event.provider && event.provider !== agentProvider)) return;
         if (event.type === "text" && event.text) setPersonalityPreview(event.text);
         if (event.type === "completed" || event.type === "error") {
           if (event.type === "error" && event.text) setPersonalityPreview(event.text);
           setPersonalityPreviewBusy(false);
-          void resetPetConversation();
+          void resetPetConversation(agentProvider);
         }
       }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [showSpeech, personalityPreviewBusy]);
+  }, [agentProvider, showSpeech, personalityPreviewBusy]);
 
   const previewPersonality = async (name: string, instructions: string) => {
     setPersonalityPreview("");
     setPersonalityPreviewBusy(true);
-    try { await startPetConversation("今天工作有點累。", name, instructions); }
+    try { await startPetConversation("今天工作有點累。", name, instructions, "conversation", [], agentProvider); }
     catch (error) { setPersonalityPreview(String(error)); setPersonalityPreviewBusy(false); }
+  };
+
+  const updateAgentProvider = async (next: AgentProvider) => {
+    if (next === agentProvider) return;
+    await stopPetConversation();
+    localStorage.setItem(DESKTOP_STORAGE.agentProvider, next);
+    setAgentProvider(next);
+    setPersonalityPreview("");
+    setPersonalityPreviewBusy(false);
+    await emitToPet(DESKTOP_EVENTS.agentProviderChanged, next);
   };
 
   useEffect(() => {
@@ -577,6 +591,10 @@ export function App() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="panel-section">
+            <AgentProviderSettings provider={agentProvider} onChange={updateAgentProvider} />
           </div>
 
           <div className="panel-section">

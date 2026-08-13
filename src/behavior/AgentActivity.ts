@@ -1,5 +1,5 @@
 export type AgentActivity = "idle" | "thinking" | "talking" | "success" | "error";
-export type AgentActivitySource = "codex" | "manual";
+export type AgentActivitySource = "codex" | "claude-code" | "manual";
 
 export interface AgentActivityEvent {
   source: AgentActivitySource;

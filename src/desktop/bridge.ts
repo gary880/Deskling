@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentActivity, AgentActivityEvent, AgentActivitySource } from "../behavior/AgentActivity";
-import type { ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings } from "../agent/conversation";
+import type { AgentProvider, AgentProviderStatus, ConversationEvent, ConversationHistoryEntry, ConversationHistorySettings } from "../agent/conversation";
 import type { PetPersonalityOverride } from "../domain/avatar";
 import type { PetMemory } from "../domain/petMemory";
 
@@ -34,6 +34,7 @@ export const DESKTOP_EVENTS = {
   memorySettingsChanged: "deskling-memory-settings-changed",
   conversationUiState: "deskling-conversation-ui-state",
   conversationUiAction: "deskling-conversation-ui-action",
+  agentProviderChanged: "deskling-agent-provider-changed",
 } as const;
 
 export const DESKTOP_STORAGE = {
@@ -52,7 +53,12 @@ export const DESKTOP_STORAGE = {
   conversationPositionOffset: "deskling.conversationPositionOffset",
   conversationHistorySettings: "deskling.conversationHistorySettings",
   petMemorySettings: "deskling.petMemorySettings",
+  agentProvider: "deskling.agentProvider",
 } as const;
+
+export function readAgentProvider(): AgentProvider {
+  return localStorage.getItem(DESKTOP_STORAGE.agentProvider) === "claude-code" ? "claude-code" : "codex";
+}
 
 export function isDesktopRuntime(): boolean {
   return isTauri();
@@ -106,15 +112,21 @@ export async function clearAgentActivity(): Promise<AgentActivityEvent> {
   return invoke<AgentActivityEvent>("clear_agent_activity");
 }
 
-export async function agentRuntimeAvailable(): Promise<boolean> {
+export async function agentRuntimeAvailable(provider: AgentProvider = readAgentProvider()): Promise<boolean> {
   if (!isDesktopRuntime()) return false;
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<boolean>("agent_runtime_available");
+  return invoke<boolean>("agent_runtime_available", { provider });
 }
 
-export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation", approvedMemories: PetMemory[] = []): Promise<string> {
+export async function agentProviderStatuses(): Promise<AgentProviderStatus[]> {
+  if (!isDesktopRuntime()) return [];
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose, approvedMemories });
+  return invoke<AgentProviderStatus[]>("agent_provider_statuses");
+}
+
+export async function startPetConversation(message: string, petName: string, petInstructions = "", purpose: "conversation" | "proactive" = "conversation", approvedMemories: PetMemory[] = [], provider: AgentProvider = readAgentProvider()): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("start_pet_conversation", { message, petName, petInstructions, purpose, approvedMemories, provider });
 }
 
 export async function loadPetMemory(petId: string, maxEntries: number): Promise<PetMemory[]> {
@@ -179,10 +191,10 @@ export async function stopPetConversation(): Promise<void> {
   await invoke("stop_pet_conversation");
 }
 
-export async function resetPetConversation(): Promise<void> {
+export async function resetPetConversation(provider: AgentProvider = readAgentProvider()): Promise<void> {
   if (!isDesktopRuntime()) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("reset_pet_conversation");
+  await invoke("reset_pet_conversation", { provider });
 }
 
 export async function loadConversationHistory(petId: string, settings: ConversationHistorySettings): Promise<ConversationHistoryEntry[]> {

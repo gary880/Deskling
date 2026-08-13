@@ -47,7 +47,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - `dragging > reacting > roaming > sleeping > idle` 行為優先序與獨立 surface state
 - 自主 idle variation、視窗／桌面表面散步與可設定的 sleep scheduling
 - 可自訂 Pet personality、App Data override 與安全 prompt composition
-- read-only Codex Conversation sidecar、雙擊開啟、左右換邊、中文 IME 安全輸入與 opt-in 主動短互動
+- Codex／Claude Code 訂閱 CLI Conversation sidecar、雙擊開啟、左右換邊、中文 IME 安全輸入與 opt-in 主動短互動
 - 每隻 Pet 獨立的本機 conversation history、保存期限與筆數限制
 - 每隻 Pet 獨立、由使用者明確確認的本機 memory，以及敏感資料防護與 prompt context budget
 - 安全的 Pet ZIP import、manifest／asset validation、衝突確認與原子安裝
@@ -61,7 +61,11 @@ Pet catalog 位於 `public/pets/index.json`。新增角色時，建立含有 `pe
 
 雙擊 Pet 開啟獨立的 Conversation sidecar。sidecar 可切換至 Pet 左側或右側，也可拖曳 header 自訂相對位置；拖曳 Pet 時會保留偏移並跟隨移動，按下左右箭頭會恢復標準停靠。關閉 sidecar 不會改變 Pet 的位置。一般 Enter 送出、Shift+Enter 換行；中文／日文等 IME 組字與選字期間的 Enter 不會送出訊息。
 
-Conversation runtime 透過已安裝並登入的 Codex CLI 執行，使用 read-only sandbox 且禁止工具與權限請求。Conversation history 和 Pet memory 是兩種不同資料：
+Conversation runtime 可在 Pet Lab 的 `AI PROVIDER` 選擇 Codex 或 Claude Code，直接使用已安裝 CLI 的訂閱登入，不要求也不保存 API key。Codex 需先執行 `codex login`，Claude Code 需先執行 `claude auth login`；狀態卡會顯示安裝版本與登入狀態。兩者皆以非互動模式執行，停用工具與權限請求，並移除 API key／自訂 endpoint 相關環境變數。
+
+Codex 使用 ChatGPT 訂閱所含的 Codex 用量。Claude Code 的 headless `claude -p` 自 2026-06-15 起使用訂閱帳號另外附帶的 Agent SDK monthly credit，並非一般互動式 Claude Code rate limit；credit 用完後只有在使用者另行啟用 usage credits 時才會繼續計費。詳見 [Codex authentication](https://learn.chatgpt.com/docs/auth) 與 [Claude Agent SDK plan usage](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)。
+
+Conversation history 和 Pet memory 是兩種不同資料：
 
 - History 保存「發生過哪些對話」，可設定保存期限與筆數；不會直接整批加入 prompt。
 - Memory 保存「使用者明確允許 Pet 記住的重要資訊」，可在 Pet Lab 的 `MEMORY` 查看、新增、編輯、刪除或全部清除。
@@ -112,6 +116,7 @@ Control Window 提供：
 
 - 匯入、替換與移除 Pet ZIP
 - Personality override 與安全預覽
+- Codex／Claude Code provider 選擇、CLI 版本與訂閱登入狀態
 - Conversation history 保存、retention、最大筆數與清除
 - Pet memory 啟用狀態、最大筆數、CRUD、來源與更新時間
 - Behavior、agent activity、autonomy、proactive conversation 與 desktop world 設定

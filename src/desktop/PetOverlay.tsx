@@ -25,7 +25,7 @@ import {
   type AgentActivityEvent,
 } from "../behavior/AgentActivity";
 import { SpriteAvatar } from "../components/SpriteAvatar";
-import { DEFAULT_HISTORY_SETTINGS, statusFromEvent, type ConversationEvent, type ConversationHistoryEntry, type ConversationHistorySettings, type ConversationStatus } from "../agent/conversation";
+import { AGENT_PROVIDER_LABELS, DEFAULT_HISTORY_SETTINGS, statusFromEvent, type AgentProvider, type ConversationEvent, type ConversationHistoryEntry, type ConversationHistorySettings, type ConversationStatus } from "../agent/conversation";
 import type { Facing, HitRegion, PetPersonalityOverride, Point } from "../domain/avatar";
 import { composePetInstructions, effectivePersonality } from "../domain/personality";
 import { DEFAULT_MEMORY_SETTINGS, selectRelevantMemories, sensitiveMemoryReason, type PetMemory, type PetMemorySettings } from "../domain/petMemory";
@@ -56,6 +56,7 @@ import {
   loadPetMemory,
   savePetMemory,
   readBooleanSetting,
+  readAgentProvider,
   readNumberSetting,
   resetPetConversation,
   startPetConversation,
@@ -156,6 +157,7 @@ export function PetOverlay() {
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>("idle");
   const [memorySaveStatus, setMemorySaveStatus] = useState("");
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
+  const [agentProvider, setAgentProvider] = useState<AgentProvider>(() => readAgentProvider());
   const [personalityOverrides, setPersonalityOverrides] = useState<PetPersonalityOverride>({});
   const [proactiveSettings, setProactiveSettings] = useState<ProactiveInteractionSettings>(() => {
     try { return { ...DEFAULT_PROACTIVE_SETTINGS, ...JSON.parse(localStorage.getItem(DESKTOP_STORAGE.proactiveSettings) ?? "{}") }; }
@@ -436,13 +438,24 @@ export function PetOverlay() {
 
   useEffect(() => {
     if (!conversationOpen) return;
-    void agentRuntimeAvailable().then(setRuntimeAvailable);
-  }, [conversationOpen]);
+    void agentRuntimeAvailable(agentProvider).then(setRuntimeAvailable);
+  }, [agentProvider, conversationOpen]);
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
     void Promise.all([
       listenDesktop<string>(DESKTOP_EVENTS.selectPet, (petId) => setSelectedId(petId)),
+      listenDesktop<AgentProvider>(DESKTOP_EVENTS.agentProviderChanged, (provider) => {
+        localStorage.setItem(DESKTOP_STORAGE.agentProvider, provider);
+        void stopPetConversation();
+        setAgentProvider(provider);
+        setConversationOpen(false);
+        setConversationResponse("");
+        conversationResponseRef.current = "";
+        setConversationStatus("idle");
+        setMemorySaveStatus("");
+        void agentRuntimeAvailable(provider).then(setRuntimeAvailable);
+      }),
       listenDesktop<string>(DESKTOP_EVENTS.playBehavior, (behavior) => {
         schedulerRef.current?.notifyActivity();
         if (behavior === "walk") {
@@ -555,6 +568,7 @@ export function PetOverlay() {
         }
       }),
       listenDesktop<ConversationEvent>(DESKTOP_EVENTS.conversation, (event) => {
+        if (event.provider && event.provider !== agentProvider) return;
         if (event.purpose === "proactive") {
           if (event.type === "started") { proactiveActiveRef.current = true; setAnimation("thinking"); }
           if (event.type === "text" && event.text) {
@@ -584,13 +598,13 @@ export function PetOverlay() {
           stopDesktopMotion();
           dispatchBehavior("wakeRequested");
           schedulerRef.current?.notifyActivity();
-          const activity: AgentActivityEvent = { source: "codex", activity: "thinking", timestamp: Date.now() };
+          const activity: AgentActivityEvent = { source: event.provider ?? agentProvider, activity: "thinking", timestamp: Date.now() };
           agentActivityEngineRef.current.accept(activity);
           setAgentEvent(activity);
         } else if (event.type === "text") {
           conversationResponseRef.current = event.text ?? "";
           setConversationResponse(conversationResponseRef.current);
-          const activity: AgentActivityEvent = { source: "codex", activity: "talking", timestamp: Date.now() };
+          const activity: AgentActivityEvent = { source: event.provider ?? agentProvider, activity: "talking", timestamp: Date.now() };
           agentActivityEngineRef.current.accept(activity);
           setAgentEvent(activity);
         } else {
@@ -600,7 +614,7 @@ export function PetOverlay() {
             conversationResponseRef.current = "";
           }
           if (event.type === "error") setConversationResponse(event.text ?? "Pet 暫時無法回答。");
-          const activity: AgentActivityEvent = { source: "codex", activity: event.type === "error" ? "error" : "success", timestamp: Date.now() };
+          const activity: AgentActivityEvent = { source: event.provider ?? agentProvider, activity: event.type === "error" ? "error" : "success", timestamp: Date.now() };
           agentActivityEngineRef.current.accept(activity);
           setAgentEvent(activity);
           if (agentActivityTimerRef.current) window.clearTimeout(agentActivityTimerRef.current);
@@ -617,7 +631,7 @@ export function PetOverlay() {
       }),
     ]).then((subscriptions) => unlisteners.push(...subscriptions));
     return () => unlisteners.forEach((unlisten) => unlisten());
-  }, [addHistoryEntry, dispatchBehavior, selectedPackage?.manifest.id, showSpeech, startReaction, stopDesktopMotion]);
+  }, [addHistoryEntry, agentProvider, dispatchBehavior, selectedPackage?.manifest.id, showSpeech, startReaction, stopDesktopMotion]);
 
   useEffect(() => {
     if (!selectedPackage) return;
@@ -653,13 +667,13 @@ export function PetOverlay() {
         personality: personality.traits,
       };
       proactiveActiveRef.current = true;
-      void startPetConversation(`Create a gentle proactive greeting from this safe context only: ${JSON.stringify(generationContext)}`, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "proactive", []).catch(() => { proactiveActiveRef.current = false; setAnimation("idle"); });
+      void startPetConversation(`Create a gentle proactive greeting from this safe context only: ${JSON.stringify(generationContext)}`, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "proactive", [], agentProvider).catch(() => { proactiveActiveRef.current = false; setAnimation("idle"); });
     };
     testProactiveRef.current = () => check(true);
     const timer = window.setInterval(() => check(false), 60_000);
     check(false);
     return () => { window.clearInterval(timer); testProactiveRef.current = () => undefined; };
-  }, [conversationOpen, conversationStatus, personalityOverrides, proactiveSettings, selectedPackage, userTyping]);
+  }, [agentProvider, conversationOpen, conversationStatus, personalityOverrides, proactiveSettings, selectedPackage, userTyping]);
 
   useEffect(() => {
     if (behaviorState !== "idle") return;
@@ -674,7 +688,7 @@ export function PetOverlay() {
 
   useEffect(() => {
     if (!selectedPackage) return;
-    void resetPetConversation();
+    void resetPetConversation(readAgentProvider());
     stopDesktopMotion();
     localStorage.setItem(DESKTOP_STORAGE.petId, selectedPackage.manifest.id);
     const renderer = new SpriteRenderer();
@@ -1097,9 +1111,10 @@ export function PetOverlay() {
       runtimeAvailable,
       memoryStatus: memorySaveStatus,
       side: conversationSide,
+      providerLabel: AGENT_PROVIDER_LABELS[agentProvider],
     };
     void emitToConversation(DESKTOP_EVENTS.conversationUiState, state);
-  }, [conversationOpen, conversationResponse, conversationSide, conversationStatus, lastDirectMessage, memorySaveStatus, personalityOverrides, runtimeAvailable, selectedPackage]);
+  }, [agentProvider, conversationOpen, conversationResponse, conversationSide, conversationStatus, lastDirectMessage, memorySaveStatus, personalityOverrides, runtimeAvailable, selectedPackage]);
 
   useEffect(() => {
     if (!selectedPackage) return;
@@ -1173,7 +1188,7 @@ export function PetOverlay() {
             await addHistoryEntry({ id: crypto.randomUUID(), role: "user", content: action.message, source: "direct", createdAt: Date.now() });
             const personality = effectivePersonality(selectedPackage.manifest, personalityOverrides);
             const stored = memorySettings.enabled ? await loadPetMemory(selectedPackage.manifest.id, memorySettings.maxEntries) : [];
-            await startPetConversation(action.message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "conversation", selectRelevantMemories(stored, action.message));
+            await startPetConversation(action.message, personality.nickname ?? selectedPackage.manifest.name, composePetInstructions(selectedPackage.manifest, personalityOverrides), "conversation", selectRelevantMemories(stored, action.message), agentProvider);
           } catch (error) {
             conversationSendPendingRef.current = false;
             setConversationStatus("error");
@@ -1186,7 +1201,7 @@ export function PetOverlay() {
       else value();
     });
     return () => { active = false; unlisten(); };
-  }, [addHistoryEntry, conversationSide, memorySettings.enabled, memorySettings.maxEntries, personalityOverrides, selectedPackage]);
+  }, [addHistoryEntry, agentProvider, conversationSide, memorySettings.enabled, memorySettings.maxEntries, personalityOverrides, selectedPackage]);
 
   if (error) return <div className="overlay-error">{error}</div>;
   if (!selectedPackage) return null;

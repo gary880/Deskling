@@ -1,8 +1,26 @@
 export type ConversationEventType = "started" | "text" | "completed" | "error";
 
+export type AgentProvider = "codex" | "claude-code";
+
+export const AGENT_PROVIDER_LABELS: Record<AgentProvider, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+};
+
+export interface AgentProviderStatus {
+  provider: AgentProvider;
+  label: string;
+  installed: boolean;
+  authenticated: boolean;
+  version?: string;
+  loginCommand: string;
+  billingNote: string;
+}
+
 export interface ConversationEvent {
   requestId: string;
   purpose?: "conversation" | "proactive";
+  provider?: AgentProvider;
   type: ConversationEventType;
   text?: string;
 }

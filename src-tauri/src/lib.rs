@@ -4,6 +4,7 @@ use tauri::{
     Emitter, Manager, WindowEvent,
 };
 
+mod agent_provider;
 mod agent_runtime;
 mod conversation_history;
 mod desktop_world;
@@ -75,8 +76,8 @@ fn report_agent_activity(
     activity: String,
     message: Option<String>,
 ) -> Result<AgentActivityEvent, String> {
-    if !matches!(source.as_str(), "codex" | "manual") {
-        return Err("source must be codex or manual".into());
+    if !matches!(source.as_str(), "codex" | "claude-code" | "manual") {
+        return Err("source must be codex, claude-code, or manual".into());
     }
     if !valid_agent_activity(&activity) {
         return Err("activity must be idle, thinking, talking, success, or error".into());
@@ -107,8 +108,13 @@ fn clear_agent_activity(app: tauri::AppHandle) -> AgentActivityEvent {
 }
 
 #[tauri::command]
-fn agent_runtime_available() -> bool {
-    agent_runtime::available()
+fn agent_runtime_available(provider: Option<agent_provider::AgentProvider>) -> bool {
+    agent_runtime::available(provider.unwrap_or_default())
+}
+
+#[tauri::command]
+fn agent_provider_statuses() -> Vec<agent_provider::AgentProviderStatus> {
+    agent_provider::statuses()
 }
 
 #[tauri::command]
@@ -120,6 +126,7 @@ fn start_pet_conversation(
     pet_instructions: String,
     purpose: Option<String>,
     approved_memories: Option<Vec<pet_memory::PetMemory>>,
+    provider: Option<agent_provider::AgentProvider>,
 ) -> Result<String, String> {
     agent_runtime::start(
         app,
@@ -129,6 +136,7 @@ fn start_pet_conversation(
         pet_instructions,
         purpose.unwrap_or_else(|| "conversation".into()),
         approved_memories.unwrap_or_default(),
+        provider.unwrap_or_default(),
     )
 }
 
@@ -142,8 +150,9 @@ fn stop_pet_conversation(
 #[tauri::command]
 fn reset_pet_conversation(
     state: tauri::State<agent_runtime::AgentRuntimeState>,
+    provider: Option<agent_provider::AgentProvider>,
 ) -> Result<(), String> {
-    agent_runtime::reset(&state)
+    agent_runtime::reset(&state, provider.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -444,6 +453,7 @@ pub fn run() {
             report_agent_activity,
             clear_agent_activity,
             agent_runtime_available,
+            agent_provider_statuses,
             start_pet_conversation,
             stop_pet_conversation,
             reset_pet_conversation,

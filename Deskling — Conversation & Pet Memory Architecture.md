@@ -34,12 +34,21 @@ Conversation UI 是獨立 native window。Pet window 不會為了顯示對話而
 → 載入同一 Pet 的 approved memories（若已啟用）
 → relevance selector 與 context budget
 → Tauri start_pet_conversation
-→ prompt 經 stdin 傳給 Codex CLI
+→ provider adapter 將 prompt 經 stdin 傳給 Codex 或 Claude Code CLI
 → runtime events 同步回 Pet 與 Conversation window
 → 保存 Pet response history（若已啟用）
 ```
 
-Codex CLI 使用 `--ask-for-approval never` 與 `--sandbox read-only`。Prompt 經 stdin 傳入；memory 不作為 shell arguments。
+Control window 將 provider 保存在 localStorage 並透過 event 同步給 Pet window。Rust runtime 為 Codex 與 Claude Code 各自保存 session ID，provider 切換時會停止目前 process，避免舊 provider 的延遲事件污染新對話。
+
+Provider adapter 的安全設定：
+
+- Codex CLI 使用 `--ask-for-approval never` 與 `--sandbox read-only`。
+- Claude Code 使用 headless stream JSON、`--safe-mode`、`--tools ""`、`--disallowedTools "mcp__*"`、`--permission-mode dontAsk` 與 `--no-chrome`。
+- 兩者都從 stdin 接收 prompt；memory 不作為 shell arguments。
+- Runtime 會移除 provider 的 API key、auth token 與自訂 endpoint 環境變數，只接受 CLI 本身已登入的訂閱帳號。
+
+Codex 使用 ChatGPT subscription login。Claude Code `claude -p` 使用訂閱帳號另附的 Agent SDK credit，不使用一般互動式 Claude Code rate limit；這項額度政策需在產品說明中明確呈現。
 
 ## Prompt Composition
 
@@ -55,7 +64,7 @@ Deskling safety policy
 → Output policy
 ```
 
-Memory 是背景資訊，不能作為 authority、security policy 或覆蓋 safety policy。Conversation context 使用 Codex runtime session continuity；保存到 App Data 的完整 history 不會被重新注入。
+Memory 是背景資訊，不能作為 authority、security policy 或覆蓋 safety policy。Conversation context 使用目前 provider 的 runtime session continuity；保存到 App Data 的完整 history 不會被重新注入。
 
 ## Pet Memory Model
 
@@ -125,7 +134,8 @@ Memory 禁止保存疑似：
 ## Persistence and Sessions
 
 ```text
-New Conversation  清除 Codex thread；不刪除 history 或 memory
+New Conversation  清除目前 provider 的 session；不刪除 history 或 memory
+Switch Provider    停止 active process；Codex 與 Claude session 分開保存
 App restart        history 與 memory 從 App Data 重新載入
 Switch Pet         切換到另一份 per-pet files
 Disable Memory     保留資料但不加入 prompt
@@ -139,7 +149,8 @@ Conversation history 支援 retention days 與 maximum entries。Memory 不使�
 - IME composition 期間、keyCode 229，以及 composition 結束後的短暫 Enter 不會送出。
 - Shift+Enter 換行；一般 Enter 送出。
 - Conversation action listener 會處理 React StrictMode 的非同步 cleanup。
-- PetOverlay 使用同步 send lock，避免重複 event 同時啟動兩個 Codex requests。
+- PetOverlay 使用同步 send lock，避免重複 event 同時啟動兩個 provider requests。
+- Conversation event 包含 provider，切換後會忽略舊 provider 的殘留事件。
 
 ## Testing Expectations
 
@@ -162,3 +173,4 @@ cargo fmt --check
 - Sidecar 開關不 resize 或移動 Pet window。
 - Sidecar 拖曳只改變 conversation offset；Pet 移動時仍保留相對位置。
 - History 與 memory 始終按 Pet ID 隔離。
+- Provider CLI 必須維持 tool-free、non-interactive，且不得讀取 API key 環境變數。

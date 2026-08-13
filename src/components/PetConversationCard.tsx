@@ -11,6 +11,7 @@ interface PetConversationCardProps {
   onWindowDrag?: () => void;
   status: ConversationStatus;
   runtimeAvailable: boolean;
+  providerLabel: string;
   onClose: () => void;
   onSend: (message: string) => Promise<void>;
   onStop: () => Promise<void>;
@@ -21,7 +22,7 @@ interface PetConversationCardProps {
 }
 
 export function PetConversationCard({
-  petName, response, memoryCandidate, side = "left", onSideChange, onWindowDrag, status, runtimeAvailable, onClose, onSend, onStop, onRemember, memoryStatus, layoutStatus, onTypingChange,
+  petName, response, memoryCandidate, side = "left", onSideChange, onWindowDrag, status, runtimeAvailable, providerLabel, onClose, onSend, onStop, onRemember, memoryStatus, layoutStatus, onTypingChange,
 }: PetConversationCardProps) {
   const [message, setMessage] = useState("");
   const [memoryDraft, setMemoryDraft] = useState<string | null>(null);
@@ -75,12 +76,12 @@ export function PetConversationCard({
   return (
     <section className={`pet-conversation pet-conversation--${side} ${memoryDraft !== null ? "pet-conversation--memory" : ""}`} aria-label={`與 ${petName} 對話`} onPointerDown={(event) => event.stopPropagation()}>
       <header className={onWindowDrag ? "pet-conversation__drag-handle" : undefined} title={onWindowDrag ? "拖曳以移動對話框" : undefined} onPointerDown={beginWindowDrag}>
-        <div><span className={`pet-conversation__dot pet-conversation__dot--${status}`} /><strong>{petName}</strong><small>Codex · read-only</small></div>
+        <div><span className={`pet-conversation__dot pet-conversation__dot--${status}`} /><strong>{petName}</strong><small>{providerLabel} · tools off</small></div>
         <nav aria-label="對話框位置"><button type="button" aria-label="將對話框移到左側" aria-pressed={side === "left"} onClick={() => onSideChange?.("left")}>←</button><button type="button" aria-label="將對話框移到右側" aria-pressed={side === "right"} onClick={() => onSideChange?.("right")}>→</button><button type="button" aria-label="關閉對話" onClick={onClose}>×</button></nav>
       </header>
       <div className="pet-conversation__response" aria-live="polite">
         {!runtimeAvailable
-          ? "找不到 Codex CLI。請先安裝並登入 Codex，Pet 才能回答。"
+          ? `${providerLabel} 尚未就緒。請先安裝 CLI 並以訂閱帳號登入。`
           : response || (busy ? "讓我想想…" : "今天想和我聊什麼？")}
         {status === "talking" && <i aria-hidden="true" />}
       </div>
